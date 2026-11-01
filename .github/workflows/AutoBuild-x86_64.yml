@@ -101,6 +101,8 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
+        set -e
+        set -o pipefail
         sudo -E docker image prune -af
         sudo -E rm -rf \
           /usr/share/dotnet \
@@ -148,6 +150,11 @@ jobs:
         # sudo -E systemctl daemon-reload
         sudo -E apt clean
         node -v
+        # fail-fast: Node 主版本必须 ≥20（pnpm 12 / vite 8 要求 node 20+；apt 自带的 node 12 会导致数小时后 daed web 构建失败且 web/ 为空）
+        NODE_MAJOR=$(node -v 2>/dev/null | sed 's/^v//; s/\..*//')
+        if ! [ "$NODE_MAJOR" -ge 20 ] 2>/dev/null; then echo "ERROR: node major version must be >= 20, got: $(node -v 2>/dev/null || echo missing)"; exit 1; fi
+        command -v pnpm >/dev/null 2>&1 || { echo "ERROR: pnpm not found"; exit 1; }
+        pnpm --version || { echo "ERROR: pnpm --version failed"; exit 1; }
         pnpm -v
         df -h
         free -m
