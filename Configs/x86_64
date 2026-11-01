@@ -16,6 +16,16 @@ CONFIG_PACKAGE_kmod-virtio-net=y
 CONFIG_PACKAGE_kmod-virtio-blk=y
 CONFIG_PACKAGE_kmod-virtio-pci=y
 
+# eBPF toolchain: use the HOST clang (apt-installed clang 14 on the runner,
+# minimum required 12). Without an explicit choice, defconfig leaves the
+# BPF_TOOLCHAIN choice unset (its PREBUILT default needs a llvm-bpf checkout
+# that a fresh clone lacks, and BUILD only fires if NEED_BPF_TOOLCHAIN is
+# selected), so bpf.mk falls back to /invalid/clang and bpf-headers fails.
+# This line is the fix for run 41278525198 (bpf-headers: "LLVM/clang
+# version too old ... found: " with /invalid/clang). It also avoids the
+# hours-long from-source LLVM build that USE_LLVM_BUILD would trigger.
+CONFIG_BPF_TOOLCHAIN_HOST=y
+
 # Base: LuCI + Chinese packs + tun
 CONFIG_PACKAGE_luci=y
 CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
