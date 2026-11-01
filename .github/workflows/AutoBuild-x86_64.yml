@@ -62,8 +62,10 @@ on:
 env:
 # 编译时调用的 [.config] 文件名称
   CONFIG_FILE: x86_64
-# 源码仓库:分支
-  DEFAULT_SOURCE: immortalwrt/immortalwrt:openwrt-24.10
+# 源码仓库:分支 (官方 openwrt-25.12, 跟随 service release)
+  DEFAULT_SOURCE: openwrt/openwrt:openwrt-25.12
+# 开启 ccache (Diy 步骤据此向 .config 追加 CONFIG_CCACHE=y)
+  CACHE_ACCELERATE: 'true'
 # 删除无用文件以增加编译空间
   DELETE_USELESS_FILES: true
 # 删除早期的 workflow 任务
@@ -150,6 +152,12 @@ jobs:
         df -h
         free -m
         echo "CPU Cores: $(nproc)"
+
+    - name: Cache ccache (best-effort; first build is cold regardless)
+      uses: actions/cache@v4
+      with:
+        path: ~/.ccache
+        key: ccache-openwrt-25.12-x86_64
 
     - name: Load Custom Variables
       run: |
@@ -263,6 +271,7 @@ jobs:
 
     - name: Upload bin to Artifacts
       uses: actions/upload-artifact@main
+      continue-on-error: true
       if: env.UPLOAD_BIN_ARTIFACTS == 'true' && steps.compile.outcome == 'success' && !cancelled()
       with:
         name: ${{ env.CONFIG_FILE }}_bin_${{ env.Compile_Date }}

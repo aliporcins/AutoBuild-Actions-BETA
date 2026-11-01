@@ -1,0 +1,10 @@
+#!/bin/sh
+# luci-totp 首次安装脚本（OpenWrt uci-defaults，执行一次后自动删除）。
+# 只建目录与权限，不开启用、不打登录补丁、不动 SSH、不动 daed、不动隧道。
+# 启用与接管必须由管理员在 LuCI 设置页 + totp-patch-login.sh 里手动完成。
+mkdir -p /etc/totp /var/lib/totp-fail /var/lib/totp-pending
+chmod 700 /etc/totp /var/lib/totp-pending
+chmod 755 /var/lib/totp-fail
+# 清理旧版残留的待验证会话（重启后失效是预期行为）：
+rm -f /var/lib/totp-pending/* 2>/dev/null
+exit 0

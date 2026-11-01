@@ -1,0 +1,11 @@
+# luci-totp UCI 配置（实验版）
+# 注意：密钥本身不在此文件里（见 /etc/totp/secret，600 root），
+# 本文件只存开关，避免密钥随 UCI 导出/备份扩散。
+config totp 'main'
+	option enabled '0'
+	option ssh_sync '0'
+	# 内网放行（默认开）：内网直连只跳过 TOTP，不跳过密码。
+	# 默认受信段只放家里主 LAN 192.168.2.0/24；绝不要默认放 10/8、
+	# 172.16/12、192.168/16 全段或访客网段，扩段须显式加 list 项。
+	option lan_bypass '1'
+	list lan_networks '192.168.2.0/24'

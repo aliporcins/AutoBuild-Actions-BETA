@@ -1,0 +1,9 @@
+# sshd_config 片段（由 totp-sync-ssh.sh 追加，勿手工全量覆盖原文件）
+# 第一因子为密钥时：
+ChallengeResponseAuthentication yes
+UsePAM yes
+AuthenticationMethods publickey,keyboard-interactive
+PasswordAuthentication no
+# 第一因子为密码时（改用下面两行替代上面两行）：
+# AuthenticationMethods password,keyboard-interactive
+# PasswordAuthentication yes

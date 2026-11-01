@@ -1,0 +1,36 @@
+-- luci.totp.authhook -- 登录流程接管机制说明（25.12 真接管版，纯文档）
+-- 本文件不是运行代码：真正的钩子是 totp-patch-login.sh 插进
+-- /usr/share/ucode/luci/dispatcher.uc 的 luci-totp-gate-v1 块，门逻辑在
+-- luci.totp.gate_step1，步骤 2 在控制器 verify_login（顶层公开节点
+-- totp/verify_login）。旧版“伪代码示例”已作废（它假设的 dispatcher.lua
+-- / sysauth.htm / login.htm 路径对 25.12 全错，且 luci.http.setcookie
+-- 在 ucode http 对象上根本不存在）。
+-- 接管逻辑（fail-closed）：
+--   1. 密码校验（dispatcher 原有 session_setup）失败 -> 直接拒绝，
+--      不进入第二步。内网放行只跳过 TOTP，绝不跳过密码；密码错的内网
+--      请求同样拒绝。已认证会话的请求根本不进登录块，不受打扰。
+--   2. 密码通过后，补丁块调 gate_step1（单字符串返回）：
+--        a. enabled≠1 -> "full"，原流程不变（未启用时补丁在位也不设门）。
+--        b. 密钥缺失或为空 -> "deny"，ucode 侧销毁 fresh 会话后落入原有
+--           403 sysauth 分支（通用失败信息，不泄露原因）。
+--        c. 内网放行判定（luci.totp.is_lan_bypass，只用 REMOTE_ADDR 与
+--           HTTP_HOST，X-Forwarded-For 一律不采信；公网域名一票否决，
+--           隧道流量源 IP 看似本地也绝不放行）成立 -> "full"。
+--        d. 否则建待验证会话（v2 文件，5 分钟有效，sid 存服务端文件，
+--           浏览器只拿随机 token）-> "pending:<token>"，ucode 侧设
+--           HttpOnly totp_pending cookie 并重定向到公开验证节点。
+--   模板作用域键禁区（真机实测教训）：luci template 渲染时标识符按
+--   模板局部 -> viewns（含 _G 回退）-> 控制器 scope 解析；scope 键若
+--   撞 _G 内置（如 error）或 viewns 特判（如 token -> authtoken），
+--   控制器传的值会被内置值遮蔽、模板里静默取不到。故 verify-login
+--   与 setup 模板一律用 errmsg / pending_token，不得用裸 error / token。
+--   3. 步骤 2（verify_login）：cookie 与表单 token 双绑定；6 位码走
+--      verify_code（±1 步、防重放、IP 限流），8 位码先走备用码（用一次
+--      即废）；通过后消费 pending、按 dispatcher 原生写法发 sysauth
+--      cookie、重定向到服务端存储的回程路径；失败不发会话、不删 pending
+--      （过期前可重试），过期则清理记录并报“请重新登录”。
+--   4. 补丁未打时：登录走原有流程，设置页明确显示“未打，登录暂不受
+--      保护”；已启用但未打时另有“已启用但未保护”警告，绝不暗示已保护。
+--   5. revert 从备份恢复 dispatcher.uc 原字节（cmp 校验 + 钩子锚串消失
+--      确认），删标记；停用/卸载后登录恢复原流程。
+module("luci.totp.authhook", package.seeall)

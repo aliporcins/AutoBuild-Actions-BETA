@@ -1,0 +1,5 @@
+# /etc/pam.d/sshd -- luci-totp 实验版片段（由 totp-sync-ssh.sh 写入 /etc/pam.d/sshd）
+# fail-closed：不加 nullok，没有密钥文件的用户直接拒绝。
+auth required pam_google_authenticator.so
+account required pam_unix.so
+session required pam_unix.so

@@ -1,0 +1,49 @@
+<%#
+  TOTP 第二步验证页（公开节点 totp/verify_login 用，自包含最小表单）。
+  注意：本页在未登录状态下渲染，故意不 include header/footer（主题头
+  依赖已认证导航），只用内联样式，不发任何外网请求。
+  token 只认 totp_pending cookie（控制器里与表单 hidden token 双绑定），
+  URL 里不带 token；本模板只原样回显控制器给的 token（十六进制串）。
+-%>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>二次验证 — OpenWrt</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5em 1em; background: #0d1117; color: #e6edf3; font-family: sans-serif; }
+.card { width: 100%; max-width: 440px; background: #161d27; border: 1px solid #2a3442; border-top: 3px solid #33c5d6; border-radius: 16px; padding: 2.2em 2em 1.8em; box-shadow: 0 18px 50px rgba(0,0,0,0.45); }
+h2 { margin: 0 0 0.5em; font-size: 1.45em; letter-spacing: 0.04em; color: #f2f5f8; }
+p { color: #aab4c0; line-height: 1.75; }
+.alert-message { padding: 0.7em 1em; margin: 1.2em 0; border: 1px solid #7a2e35; border-radius: 8px; background: #331a1e; color: #ffb3b8; }
+label { display: block; margin: 1.4em 0 0.5em; color: #c7d0da; font-size: 0.95em; letter-spacing: 0.08em; }
+input[type="text"] { width: 100%; padding: 0.7em 0.5em; font-size: 1.6em; letter-spacing: 0.3em; text-align: center; color: #f2f5f8; background: #0d1319; border: 1px solid #2e3a49; border-radius: 10px; outline: none; }
+input[type="text"]:focus { border-color: #33c5d6; box-shadow: 0 0 0 3px rgba(51,197,214,0.22); }
+input[type="submit"] { width: 100%; margin-top: 1.4em; padding: 0.85em; font-size: 1.05em; font-weight: bold; color: #06121a; background: #33c5d6; border: none; border-radius: 10px; cursor: pointer; }
+input[type="submit"]:hover { background: #4dd0e1; }
+p.note { color: #7d8794; font-size: 0.85em; text-align: center; margin-top: 1.4em; }
+a { color: #4dd0e1; }
+</style>
+</head>
+<body>
+<div class="card">
+<h2>二次验证</h2>
+<p>密码已通过，请输入验证器上的 6 位验证码（或 8 位备用码）完成登录。</p>
+<% if errmsg and type(errmsg) == "string" and errmsg ~= "" then %><div class="alert-message"><%=errmsg%></div><% end %>
+<% if pending_token and pending_token ~= "" then %>
+<form method="post" action="<%=post_url%>">
+	<label for="code">验证码</label>
+	<input type="text" id="code" name="code" inputmode="numeric" autocomplete="one-time-code"
+		placeholder="6 位验证码，或 8 位备用码" autofocus="autofocus" />
+	<input type="hidden" name="token" value="<%=pending_token%>" />
+	<input type="submit" value="验证并登录" />
+</form>
+<p class="note">验证会话 5 分钟有效，过期请重新登录。备用码用一次即废。</p>
+<% else %>
+<p><a href="<%=login_url%>">返回登录页</a></p>
+<% end %>
+</div>
+</body>
+</html>

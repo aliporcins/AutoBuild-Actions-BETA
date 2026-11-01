@@ -373,15 +373,16 @@ Process_Fw_Core() {
 	while [[ $1 ]];do
 		case "${TARGET_BOARD}" in
 		x86)
-			if [[ $1 =~ efi ]]
+			# Fork change: ship EVERY matched combined image (plain + efi),
+			# not only the efi variant. Regex_Skip already filters out ext4,
+			# kernel, rootfs and metadata, so only the squashfs combined
+			# images reach this point.
+			Fw=${AutoBuild_Fw/SHA256/$(Get_sha256 $1)}
+			Fw=${Fw/FORMAT/${Fw_Format}}
+			if [[ -f $1 ]]
 			then
-				Fw=${AutoBuild_Fw/SHA256/$(Get_sha256 $1)}
-				Fw=${Fw/FORMAT/${Fw_Format}}
-				if [[ -f $1 ]]
-				then
-					ECHO "Move x86 image [$1] to [${Fw}] ..."
-					mv -f $1 ${Fw}
-				fi
+				ECHO "Move x86 image [$1] to [${Fw}] ..."
+				mv -f $1 ${Fw}
 			fi
 		;;
 		*)

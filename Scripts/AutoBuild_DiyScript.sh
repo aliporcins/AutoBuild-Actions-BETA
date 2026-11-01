@@ -1,239 +1,98 @@
 #!/bin/bash
 # AutoBuild Module by Hyy2001 <https://github.com/Hyy2001X/AutoBuild-Actions-BETA>
-# AutoBuild DiyScript
+# AutoBuild DiyScript -- adapted for aliporcins/AutoBuild-Actions-BETA:
+# builds official openwrt-25.12 for x86_64 with the production VM100 package set.
+# No credentials are baked into the image; default address stays 192.168.1.1.
 
 Firmware_Diy_Core() {
 
-	# 请在该函数内按需修改变量设置, 使用 case 语句控制不同预设变量的设置
-	
-	# 可用预设变量
-	# ${OP_AUTHOR}			OpenWrt 源码作者
-	# ${OP_REPO}			OpenWrt 仓库名称
-	# ${OP_BRANCH}			OpenWrt 源码分支
-	# ${CONFIG_FILE}		配置文件
-	
 	Author=AUTO
 	# 作者名称, AUTO: [自动识别]
-	
+
 	Author_URL=AUTO
 	# 自定义作者网站或域名, AUTO: [自动识别]
-	
+
 	Default_Flag=AUTO
 	# 固件标签 (名称后缀), 适用不同配置文件, AUTO: [自动识别]
-	
+
 	Default_IP="192.168.1.1"
-	# 固件 IP 地址
-	
+	# 固件 IP 地址 (upstream default; production 192.168.2.1 is NEVER baked in)
+
 	Default_Title="Powered by AutoBuild-Actions"
 	# 固件终端首页显示的额外信息
-	
+
 	Short_Fw_Date=true
 	# 简短的固件日期, true: [20210601]; false: [202106012359]
-	
+
 	x86_Full_Images=false
 	# 额外上传已检测到的 x86 虚拟磁盘镜像, true: [上传]; false: [不上传]
-	
+	# (Both squashfs combined images -- plain + efi -- are shipped via the
+	#  patched Process_Fw_Core in AutoBuild_Function.sh regardless of this flag.)
+
 	Fw_MFormat=AUTO
 	# 自定义固件格式, AUTO: [自动识别]
-	
+
 	Regex_Skip="packages|buildinfo|sha256sums|manifest|kernel|rootfs|factory|itb|profile|ext4|json"
-	# 输出固件时丢弃包含该内容的固件/文件
-	
-	AutoBuild_Features=true
+	# 输出固件时丢弃包含该内容的固件/文件 (ext4 stays out of the Release dir;
+	# it remains available in the bin artifact)
+
+	AutoBuild_Features=false
 	# 添加 AutoBuild 固件特性, true: [开启]; false: [关闭]
-	
+	# (false: no autoupdate app, no banner/profile overrides -- image stays
+	#  aligned with the production package set)
+
 	AutoBuild_Features_Patch=false
 	AutoBuild_Features_Kconfig=false
 }
 
 Firmware_Diy() {
 
-	# 请在该函数内定制固件
+	# External packages, ALL pinned to exact commits (core3 lesson: never float
+	# on a moving branch). Runs after feeds install, before make defconfig.
+	# package/luci-app-totp is vendored in this repo (user's own package);
+	# it needs no clone here.
 
-	# 可用预设变量, 其他可用变量请参考运行日志
-	# ${OP_AUTHOR}			OpenWrt 源码作者
-	# ${OP_REPO}			OpenWrt 仓库名称
-	# ${OP_BRANCH}			OpenWrt 源码分支
-	# ${TARGET_PROFILE}		设备名称
-	# ${TARGET_BOARD}		设备架构
-	# ${TARGET_FLAG}		固件名称后缀
-	# ${CONFIG_FILE}		配置文件
+	# Defensive: official 25.12 feeds ship no daed, but drop any feed copy
+	# if one ever appears, so the pinned QiuSimons copy is the only one.
+	rm -rf feeds/packages/net/daed feeds/luci/applications/luci-app-daed
 
-	# ${CustomFiles}		仓库中的 /CustomFiles 绝对路径
-	# ${Scripts}			仓库中的 /Scripts 绝对路径
+	# daed (dae + wing) + luci-app-daed UI -- QiuSimons, 2026-09-04
+	git clone https://github.com/QiuSimons/luci-app-daed /tmp/daed-src
+	git -C /tmp/daed-src checkout bc9a40e08b3c926a4d324f87911cba5e85dce8e6
+	cp -a /tmp/daed-src/daed package/daed
+	cp -a /tmp/daed-src/luci-app-daed package/luci-app-daed
 
-	# ${WORK}				OpenWrt 源码目录
-	# ${FEEDS_CONF}			OpenWrt 源码目录下的 feeds.conf.default 文件
-	# ${FEEDS_LUCI}			OpenWrt 源码目录下的 package/feeds/luci 目录
-	# ${FEEDS_PKG}			OpenWrt 源码目录下的 package/feeds/packages 目录
-	# ${BASE_FILES}			OpenWrt 源码目录下的 package/base-files/files 目录
+	# OpenClash UI (core downloads on first run -- accepted)
+	git clone https://github.com/vernesong/OpenClash /tmp/openclash-src
+	git -C /tmp/openclash-src checkout e553e82e01c697aefbe1555261a503f425e00ccd
+	cp -a /tmp/openclash-src/luci-app-openclash package/luci-app-openclash
 
-	# AddPackage <package_path> <git_user> <git_repo> <git_branch>
-	# ClashDL <platform> <core_type> [dev/tun/meta]
-	# ReleaseDL <release_url> <file> <target_path>
-	# Copy <cp_from> <cp_to > <rename>
-	# merge_package <git_branch> <git_repo_url> <package_path> <target_path>..
-	
-	case "${OP_AUTHOR}/${OP_REPO}:${OP_BRANCH}" in
-	coolsnowwolf/lede:master)
-		cat >> ${Version_File} <<EOF
-sed -i '/check_signature/d' /etc/opkg.conf
-if [ -z "\$(grep "REDIRECT --to-ports 53" /etc/firewall.user 2> /dev/null)" ]
-then
-	echo '# iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 53' >> /etc/firewall.user
-	echo '# iptables -t nat -A PREROUTING -p tcp --dport 53 -j REDIRECT --to-ports 53' >> /etc/firewall.user
-	echo '# [ -n "\$(command -v ip6tables)" ] && ip6tables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 53' >> /etc/firewall.user
-	echo '# [ -n "\$(command -v ip6tables)" ] && ip6tables -t nat -A PREROUTING -p tcp --dport 53 -j REDIRECT --to-ports 53' >> /etc/firewall.user
-	echo 'iptables -t mangle -A PREROUTING -i pppoe -p icmp --icmp-type destination-unreachable -j DROP' >> /etc/firewall.user
-	echo 'iptables -t mangle -A PREROUTING -i pppoe -p tcp -m tcp --tcp-flags ACK,RST RST -j DROP' >> /etc/firewall.user
-	echo 'iptables -t mangle -A PREROUTING -i pppoe -p tcp -m tcp --tcp-flags PSH,FIN PSH,FIN -j DROP' >> /etc/firewall.user
-	echo '[ -n "\$(command -v ip6tables)" ] && ip6tables -t mangle -A PREROUTING -i pppoe -p tcp -m tcp --tcp-flags PSH,FIN PSH,FIN -j DROP' >> /etc/firewall.user
-	echo '[ -n "\$(command -v ip6tables)" ] && ip6tables -t mangle -A PREROUTING -i pppoe -p ipv6-icmp --icmpv6-type destination-unreachable -j DROP' >> /etc/firewall.user
-	echo '[ -n "\$(command -v ip6tables)" ] && ip6tables -t mangle -A PREROUTING -i pppoe -p tcp -m tcp --tcp-flags ACK,RST RST -j DROP' >> /etc/firewall.user
-fi
-exit 0
-EOF
-		# sed -i "s?/bin/login?/usr/libexec/login.sh?g" ${FEEDS_PKG}/ttyd/files/ttyd.config
-		# sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
-		# sed -i '/uci commit luci/i\uci set luci.main.mediaurlbase="/luci-static/argon-mod"' $(PKG_Finder d package default-settings)/files/zzz-default-settings
-		#sed -i "s?openwrt-23.05?master?g" ${FEEDS_CONF}
-		git reset --hard 1627fd2c745e496134834a8fb8145ba0aa458ae9
-		
-		rm -r ${FEEDS_LUCI}/luci-theme-argon*
-		AddPackage other vernesong OpenClash dev
-		AddPackage other jerrykuku luci-app-argon-config master
-		AddPackage other sbwml luci-app-mosdns v5-lua
-		AddPackage themes jerrykuku luci-theme-argon 18.06
-		AddPackage themes thinktip luci-theme-neobird main
-		AddPackage msd_lite ximiTech luci-app-msd_lite main
-		AddPackage msd_lite ximiTech msd_lite main
-		AddPackage iptvhelper riverscn openwrt-iptvhelper master
-		rm -r ${FEEDS_PKG}/mosdns
-		rm -r ${FEEDS_LUCI}/luci-app-mosdns
-		rm -r ${FEEDS_PKG}/curl
-		rm -r ${FEEDS_PKG}/msd_lite
-		Copy ${CustomFiles}/curl ${FEEDS_PKG}
-		
-		case "${TARGET_BOARD}" in
-		ramips)
-			sed -i "/DEVICE_COMPAT_VERSION := 1.1/d" target/linux/ramips/image/mt7621.mk
-			Copy ${CustomFiles}/Depends/automount $(PKG_Finder d "package" automount)/files 15-automount
-		;;
-		esac
+	# Lucky UI + binary (binary fetched from upstream release at build time
+	# by the package's own Makefile)
+	git clone https://github.com/gdy666/luci-app-lucky /tmp/lucky-src
+	git -C /tmp/lucky-src checkout 91b506627c1d81fa323816e3aeafcbde493d03a9
+	cp -a /tmp/lucky-src/luci-app-lucky package/luci-app-lucky
 
-		case "${CONFIG_FILE}" in
-		d-team_newifi-d2-Clash | xiaoyu_xy-c5-Clash)
-			ClashDL mipsle-hardfloat tun
-		;;
-		esac
-			
-		case "${TARGET_PROFILE}" in
-		d-team_newifi-d2)
-			Copy ${CustomFiles}/${TARGET_PROFILE}_system ${BASE_FILES}/etc/config system
-		;;
-		xiaomi_redmi-router-ax6s)
-			AddPackage passwall-depends Openwrt-Passwall openwrt-passwall-packages main
-			AddPackage passwall-luci Openwrt-Passwall openwrt-passwall main
-		;;
-		esac
-	;;
-	immortalwrt/immortalwrt*)
-		case "${TARGET_PROFILE}" in
-		x86_64)
-			sed -i -- 's:/bin/ash:'/bin/bash':g' ${BASE_FILES}/etc/passwd
-			case "${CONFIG_FILE}" in
-			x86_64)
-				AddPackage qosmate hudra0 qosmate main
-				AddPackage qosmate hudra0 luci-app-qosmate main
-				
-				AddPackage bandix timsaya luci-app-bandix main
-				AddPackage bandix timsaya openwrt-bandix main
+	# Disk manager (Lua + luci-compat, which exists in the 25.12 luci feed)
+	git clone https://github.com/lisaac/luci-app-diskman /tmp/diskman-src
+	git -C /tmp/diskman-src checkout c20df1d4f40d86e32fd919f33122b2a48f8a99b4
+	cp -a /tmp/diskman-src/applications/luci-app-diskman package/luci-app-diskman
 
-				AddPackage fakehttp yingziwu luci-app-fakehttp main
-				AddPackage fakehttp yingziwu openwrt-fakehttp main
-				
-				AddPackage passwall Openwrt-Passwall openwrt-passwall main
-			    AddPackage passwall Openwrt-Passwall openwrt-passwall-packages main
-				
-				git clone https://github.com/immortalwrt/packages /tmp/packages
-				git clone https://github.com/immortalwrt/luci /tmp/luci
-				#git clone https://github.com/QiuSimons/luci-app-daed package/dae
-				rm -rf feeds/packages/net/daed
-				rm -rf feeds/luci/applications/luci-app-daed
-				cp -a /tmp/packages/net/daed feeds/packages/net/daed
-				cp -a /tmp/luci/applications/luci-app-daed feeds/luci/applications/luci-app-daed
-				#cd package/dae
-				#git checkout e7040afc92a3bff4b9e4fca381e7e14a7be1b75e
-				#cd -
-				
-				sed -i 's/^local excluded_domain = {.*/local excluded_domain = {}/' package/passwall/openwrt-passwall/luci-app-passwall/root/usr/share/passwall/rule_update.lua
-				
-				rm -rf feeds/packages/lang/golang
-				git clone https://github.com/sbwml/packages_lang_golang -b 27.x feeds/packages/lang/golang
-				
-				rm -r ${FEEDS_LUCI}/luci-app-passwall
-				rm -rf ${FEEDS_PKG}/{xray-core,v2ray-geodata,sing-box,chinadns-ng,dns2socks,hysteria,ipt2socks,microsocks,naiveproxy,shadowsocks-libev,shadowsocks-rust,shadowsocksr-libev,simple-obfs,tcping,trojan-plus,tuic-client,v2ray-plugin,xray-plugin,geoview,shadow-tls}
+	# RAM-free (JS)
+	git clone https://github.com/sbwml/luci-app-ramfree /tmp/ramfree-src
+	git -C /tmp/ramfree-src checkout 54dc42ded2e19f2f191b3ee54ac952f9d4acc8f4
+	cp -a /tmp/ramfree-src package/luci-app-ramfree
 
-				Copy ${CustomFiles}/speedtest ${BASE_FILES}/usr/bin
-				chmod +x ${BASE_FILES}/usr/bin/speedtest
-			;;
-			esac
-		;;
-		esac
-	;;
-	padavanonly/immortalwrtARM*)
-		case "${TARGET_PROFILE}" in
-		xiaomi_redmi-router-ax6s)
-			:
-		;;
-		esac
-	;;
-	hanwckf/immortalwrt-mt798x*)
-		case "${TARGET_PROFILE}" in
-		cmcc_rax3000m | jcg_q30)
-			AddPackage fakehttp yingziwu luci-app-fakehttp main
-			AddPackage fakehttp yingziwu openwrt-fakehttp main
-				
-			rm -r ${FEEDS_LUCI}/luci-app-passwall
-			rm -rf ${FEEDS_PKG}/{xray-core,v2ray-geodata,sing-box,chinadns-ng,dns2socks,hysteria,ipt2socks,microsocks,naiveproxy,shadowsocks-libev,shadowsocks-rust,shadowsocksr-libev,simple-obfs,tcping,trojan-plus,tuic-client,v2ray-plugin,xray-plugin,geoview,shadow-tls}
+	# OTA (JS, claims 25.12/apk support)
+	git clone https://github.com/MinimaxFlora/luci-app-ota /tmp/ota-src
+	git -C /tmp/ota-src checkout 5f66f5dc27bf9ec9d4666cc07f69d9b5ed1829d2
+	cp -a /tmp/ota-src package/luci-app-ota
 
-			AddPackage passwall Openwrt-Passwall openwrt-passwall main
-			AddPackage passwall Openwrt-Passwall openwrt-passwall-packages main
-			sed -i 's/^local excluded_domain = {.*/local excluded_domain = {}/' package/passwall/openwrt-passwall/luci-app-passwall/root/usr/share/passwall/rule_update.lua
-				
-			patch < ${CustomFiles}/mt7981/0001-Add-iptables-socket.patch -p1 -d ${WORK}
-
-			rm -rf ${WORK}/package/network/services/dnsmasq
-			Copy ${CustomFiles}/dnsmasq ${WORK}/package/network/services
-
-			find ${WORK}/package/ | grep Makefile | grep mosdns | xargs rm -f
-			
-			rm -rf feeds/packages/lang/golang
-			git clone https://github.com/sbwml/packages_lang_golang -b 25.x feeds/packages/lang/golang
-				
-			AddPackage other sbwml luci-app-mosdns v5
-		;;
-		esac
-	;;
-	esac
-	case "${TARGET_PROFILE}" in
-	x86_64)
-		Copy ${CustomFiles}/Depends/cpuset ${BASE_FILES}/bin
-		ReleaseDL https://api.github.com/repos/nxtrace/NTrace-core/releases/latest nexttrace_linux_amd64 ${BASE_FILES}/bin nexttrace
-
-		hysteria_version="2.7.0"
-		wstunnel_version="9.2.3"
-		wget --quiet --no-check-certificate -P /tmp \
-			https://github.com/apernet/hysteria/releases/download/app%2Fv${hysteria_version}/hysteria-linux-amd64
-		wget --quiet --no-check-certificate -P /tmp \
-			https://github.com/erebe/wstunnel/releases/download/v${wstunnel_version}/wstunnel_${wstunnel_version}_linux_amd64.tar.gz
-		tar -xvzf /tmp/wstunnel_${wstunnel_version}_linux_amd64.tar.gz -C /tmp
-		Copy /tmp/wstunnel ${BASE_FILES}/usr/bin
-		Copy /tmp/hysteria-linux-amd64 ${BASE_FILES}/usr/bin hysteria
-		chmod +x ${BASE_FILES}/usr/bin/hysteria ${BASE_FILES}/usr/bin/wstunnel
-
-		# ReleaseDL https://api.github.com/repos/Loyalsoldier/v2ray-rules-dat/releases/latest geosite.dat ${BASE_FILES}/usr/v2ray
-		# ReleaseDL https://api.github.com/repos/Loyalsoldier/v2ray-rules-dat/releases/latest geoip.dat ${BASE_FILES}/usr/v2ray
-	;;
-	esac
+	# Scheduled reboot UI (Lua; upstream has no luci-compat dep, add it
+	# fork-locally so it renders on ucode LuCI; its function is one cron
+	# line if it still fails Phase 1 verification)
+	git clone https://github.com/Wenjw28/luci-app-autoreboot /tmp/autoreboot-src
+	git -C /tmp/autoreboot-src checkout 53f6e73bfe8b5416a4e602791870c0d6e0f0920c
+	cp -a /tmp/autoreboot-src package/luci-app-autoreboot
+	sed -i 's/LUCI_DEPENDS:=+cron +luci-base/LUCI_DEPENDS:=+cron +luci-base +luci-compat/' package/luci-app-autoreboot/Makefile
 }
