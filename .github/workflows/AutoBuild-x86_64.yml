@@ -165,6 +165,7 @@ jobs:
       with:
         path: ~/.ccache
         key: ccache-openwrt-25.12-x86_64
+        save-always: true
 
     - name: Load Custom Variables
       run: |
