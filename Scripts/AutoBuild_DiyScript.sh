@@ -62,6 +62,16 @@ Firmware_Diy() {
 	cp -a /tmp/daed-src/daed package/daed
 	cp -a /tmp/daed-src/luci-app-daed package/luci-app-daed
 
+	# Fork-local fail-fast for QiuSimons daed Build/Prepare (2026-11-02):
+	# upstream Prepare is ';'-chained, so a failed node download, pnpm
+	# install, pnpm build or cp is silently swallowed and only surfaces
+	# hours later as a Go embed error on an empty webrender/web
+	# (runs 2 and 3 both died this way; the frontend itself builds fine).
+	# Patch it to abort loudly instead. The patch script asserts its
+	# anchors, so a future upstream Makefile change fails here at diy
+	# time rather than silently skipping the patch.
+	python3 $GITHUB_WORKSPACE/Scripts/patch_daed_makefile.py package/daed/Makefile
+
 	# OpenClash UI (core downloads on first run -- accepted)
 	git clone https://github.com/vernesong/OpenClash /tmp/openclash-src
 	git -C /tmp/openclash-src checkout e553e82e01c697aefbe1555261a503f425e00ccd
