@@ -66,6 +66,12 @@ Firmware_Diy() {
 	cp -a /tmp/daed-src/daed package/daed
 	cp -a /tmp/daed-src/luci-app-daede package/luci-app-daede
 
+	# daed 2026.10.30 requires Go >= 1.27, but the 25.12 feed default is
+	# 1.26 (run 6 died on 'go.mod requires go >= 1.27.0'). Point only
+	# daed at the feed's versioned 1.27 host toolchain; everything else
+	# keeps the default 1.26 it already built fine with in run 6.
+	sed -i 's/^PKG_BUILD_DEPENDS:=golang\/host /PKG_BUILD_DEPENDS:=golang1.27\/host /' package/daed/Makefile
+
 	# NOTE (2026-11-02, kenzok8 switch): the old fork-local fail-fast patch
 	# (Scripts/patch_daed_makefile.py) is NOT applied here -- its anchors
 	# (go get / .node_tmp) do not exist in kenzok8's tarball-only Prepare.
