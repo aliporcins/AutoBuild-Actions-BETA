@@ -53,24 +53,24 @@ Firmware_Diy() {
 	# it needs no clone here.
 
 	# Defensive: official 25.12 feeds ship no daed, but drop any feed copy
-	# if one ever appears, so the pinned QiuSimons copy is the only one.
+	# if one ever appears, so the pinned kenzok8 copy is the only one.
 	rm -rf feeds/packages/net/daed feeds/luci/applications/luci-app-daed
 
-	# daed (dae + wing) + luci-app-daed UI -- QiuSimons, 2026-09-04
-	git clone https://github.com/QiuSimons/luci-app-daed /tmp/daed-src
-	git -C /tmp/daed-src checkout bc9a40e08b3c926a4d324f87911cba5e85dce8e6
+	# daed (dae + wing) + luci-app-daede UI -- kenzok8, pinned 2026-11-02
+	# (switched from QiuSimons after runs 2-5 died in its Build/Prepare:
+	# ';'-chained pnpm web build, then missing system Go for go get).
+	# kenzok8's daed/Makefile Prepare only unpacks a CI prebuilt tarball
+	# (PKG_VERSION 2026.10.30, PKG_HASH 1850c01d...), no go get / pnpm.
+	git clone https://github.com/kenzok8/openwrt-daede /tmp/daed-src
+	git -C /tmp/daed-src checkout 1eedcafd1cd4d8a89ac928be6608df76ffb38f78
 	cp -a /tmp/daed-src/daed package/daed
-	cp -a /tmp/daed-src/luci-app-daed package/luci-app-daed
+	cp -a /tmp/daed-src/luci-app-daede package/luci-app-daede
 
-	# Fork-local fail-fast for QiuSimons daed Build/Prepare (2026-11-02):
-	# upstream Prepare is ';'-chained, so a failed node download, pnpm
-	# install, pnpm build or cp is silently swallowed and only surfaces
-	# hours later as a Go embed error on an empty webrender/web
-	# (runs 2 and 3 both died this way; the frontend itself builds fine).
-	# Patch it to abort loudly instead. The patch script asserts its
-	# anchors, so a future upstream Makefile change fails here at diy
-	# time rather than silently skipping the patch.
-	python3 $GITHUB_WORKSPACE/Scripts/patch_daed_makefile.py package/daed/Makefile
+	# NOTE (2026-11-02, kenzok8 switch): the old fork-local fail-fast patch
+	# (Scripts/patch_daed_makefile.py) is NOT applied here -- its anchors
+	# (go get / .node_tmp) do not exist in kenzok8's tarball-only Prepare.
+	# Applying it would fail this diy step outright. The script file stays
+	# in the repo as dead code for now.
 
 	# OpenClash UI (core downloads on first run -- accepted)
 	git clone https://github.com/vernesong/OpenClash /tmp/openclash-src
