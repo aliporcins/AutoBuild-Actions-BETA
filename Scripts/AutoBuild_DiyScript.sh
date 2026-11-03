@@ -65,6 +65,10 @@ Firmware_Diy() {
 	git -C /tmp/daed-src checkout 1eedcafd1cd4d8a89ac928be6608df76ffb38f78
 	cp -a /tmp/daed-src/daed package/daed
 	cp -a /tmp/daed-src/luci-app-daede package/luci-app-daede
+	# luci-app-daede/Makefile:83 installs ../dae/files/dae.config (run 8
+	# died on its absence); kenzok8 ships a dae/ dir -- copy it too.
+	# Config does not select dae, so it is not built, only referenced.
+	cp -a /tmp/daed-src/dae package/dae
 
 	# daed 2026.10.30 requires Go >= 1.27, but the 25.12 feed default is
 	# 1.26 (run 6 died on 'go.mod requires go >= 1.27.0'). Point only
