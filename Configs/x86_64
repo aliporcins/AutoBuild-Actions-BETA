@@ -65,3 +65,11 @@ CONFIG_PACKAGE_luci-app-autoreboot=y
 
 # Vendored in this repo under package/ (user's own package, read-only upstream)
 CONFIG_PACKAGE_luci-app-totp=y
+
+# Kernel BTF for dae/daed CO-RE: daed's BTF choice defaults to
+# DAED_USE_KERNEL_BTF but depends on KERNEL_DEBUG_INFO_BTF; without it the
+# choice falls to DAED_USE_VMLINUX_BTF and run 9 died at package/install
+# on `vmlinux-btf (no such package)`. With this on, daed uses the
+# kernel's integrated BTF and no vmlinux-btf package is needed.
+# (pahole for BTF generation comes from the workflow's dwarves install.)
+CONFIG_KERNEL_DEBUG_INFO_BTF=y
