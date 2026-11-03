@@ -69,6 +69,11 @@ Firmware_Diy() {
 	# died on its absence); kenzok8 ships a dae/ dir -- copy it too.
 	# Config does not select dae, so it is not built, only referenced.
 	cp -a /tmp/daed-src/dae package/dae
+	# Fallback only: kenzok8 also ships a vmlinux-btf/ dir, never copied.
+	# With kernel BTF enabled (Configs/x86_64) daed's choice stays on the
+	# integrated path and this package is not built; it only covers the
+	# case where the choice falls to DAED_USE_VMLINUX_BTF.
+	cp -a /tmp/daed-src/vmlinux-btf package/vmlinux-btf
 
 	# daed 2026.10.30 requires Go >= 1.27, but the 25.12 feed default is
 	# 1.26 (run 6 died on 'go.mod requires go >= 1.27.0'). Point only
@@ -87,11 +92,16 @@ Firmware_Diy() {
 	git -C /tmp/openclash-src checkout e553e82e01c697aefbe1555261a503f425e00ccd
 	cp -a /tmp/openclash-src/luci-app-openclash package/luci-app-openclash
 
-	# Lucky UI + binary (binary fetched from upstream release at build time
-	# by the package's own Makefile)
+	# Lucky UI + binary package (both dirs in the same pinned repo)
 	git clone https://github.com/gdy666/luci-app-lucky /tmp/lucky-src
 	git -C /tmp/lucky-src checkout 91b506627c1d81fa323816e3aeafcbde493d03a9
 	cp -a /tmp/lucky-src/luci-app-lucky package/luci-app-lucky
+	# luci-app-lucky declares +lucky, but only the UI dir was copied --
+	# run 9 died at package/install on `lucky (no such package)`. The
+	# sibling `lucky` binary package lives in the same pinned repo
+	# (prebuilt release tarball, no build work); copy it too. Same
+	# class of gap as run 9's dae/ sibling.
+	cp -a /tmp/lucky-src/lucky package/lucky
 
 	# Disk manager (Lua + luci-compat, which exists in the 25.12 luci feed)
 	git clone https://github.com/lisaac/luci-app-diskman /tmp/diskman-src
