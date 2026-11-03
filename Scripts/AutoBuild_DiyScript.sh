@@ -88,8 +88,24 @@ Firmware_Diy() {
 	# in the repo as dead code for now.
 
 	# OpenClash UI (core downloads on first run -- accepted)
-	git clone https://github.com/vernesong/OpenClash /tmp/openclash-src
-	git -C /tmp/openclash-src checkout e553e82e01c697aefbe1555261a503f425e00ccd
+	# NOTE (2026-11-04, runs 11+12): full `git clone` of OpenClash
+	# stalled twice (80-105 min no output, then fetch-pack disconnect
+	# / early EOF, exit 128). Only the pinned commit's tree is used
+	# (cp below), so fetch just that commit (depth 1 by SHA) with a
+	# codeload-tarball fallback; tree is identical to checking out
+	# the same commit from a full clone. Both paths fail fast.
+	rm -rf /tmp/openclash-src /tmp/openclash.tar.gz
+	git init -q /tmp/openclash-src
+	git -C /tmp/openclash-src remote add origin https://github.com/vernesong/OpenClash
+	if git -C /tmp/openclash-src fetch -q --depth 1 origin e553e82e01c697aefbe1555261a503f425e00ccd; then
+		git -C /tmp/openclash-src checkout -q FETCH_HEAD
+	else
+		echo "SHA fetch failed, falling back to codeload tarball"
+		rm -rf /tmp/openclash-src
+		mkdir -p /tmp/openclash-src
+		curl -fsSL -o /tmp/openclash.tar.gz https://codeload.github.com/vernesong/OpenClash/tar.gz/e553e82e01c697aefbe1555261a503f425e00ccd
+		tar -xzf /tmp/openclash.tar.gz -C /tmp/openclash-src --strip-components=1
+	fi
 	cp -a /tmp/openclash-src/luci-app-openclash package/luci-app-openclash
 
 	# Lucky UI + binary package (both dirs in the same pinned repo)
