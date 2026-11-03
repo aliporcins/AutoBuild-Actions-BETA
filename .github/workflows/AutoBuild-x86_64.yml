@@ -139,6 +139,11 @@ jobs:
           uglifyjs unzip vim wget xmlto xxd zlib1g-dev \
           python-is-python3 flex
         sudo -E apt-get install -y clang llvm npm
+        # dwarves provides pahole, required to generate kernel BTF
+        # (CONFIG_KERNEL_DEBUG_INFO_BTF) and by the vmlinux-btf fallback
+        # package; run 9's runner had no pahole (only a commented-out
+        # clang-18 line mentioned it), so neither BTF path could build.
+        sudo -E apt-get install -y dwarves
         sudo -E npm install -g pnpm
         # curl -fsSL https://apt.llvm.org/llvm.sh | sudo -E bash -s -- 18
         # sudo -E apt install -y clang-18 llvm-18 lld-18 pahole
