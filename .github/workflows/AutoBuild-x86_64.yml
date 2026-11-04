@@ -6,6 +6,9 @@
 
 name: x86_64
 
+permissions:
+  contents: write
+
 on:
   repository_dispatch:
   ## Git Push 时触发编译(不要删除此行注释)
