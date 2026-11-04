@@ -73,11 +73,9 @@ CONFIG_PACKAGE_luci-app-totp=y
 # kernel's integrated BTF and no vmlinux-btf package is needed.
 # (pahole for BTF generation comes from the workflow's dwarves install.)
 CONFIG_KERNEL_DEBUG_INFO_BTF=y
+# DEBUG_INFO_REDUCED 在 OpenWrt Config-kernel.in 里默认就是 y，而 DEBUG_INFO_BTF 依赖 !REDUCED；不显式关掉它，defconfig 会静默丢 BTF。
+# CONFIG_KERNEL_DEBUG_INFO_REDUCED is not set
 CONFIG_KERNEL_DEBUG_INFO=y
 CONFIG_KERNEL_KALLSYMS=y
-CONFIG_KERNEL_KALLSYMS_ALL=y
-CONFIG_KERNEL_BPF=y
-CONFIG_KERNEL_BPF_SYSCALL=y
-CONFIG_KERNEL_BPF_JIT=y
 CONFIG_KERNEL_CGROUP_BPF=y
 CONFIG_TARGET_ROOTFS_PARTSIZE=1024
