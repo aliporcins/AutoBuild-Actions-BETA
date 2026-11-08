@@ -91,6 +91,9 @@ Firmware_Diy_Start() {
 		AutoBuild_Fw="AutoBuild-${OP_REPO}-${TARGET_PROFILE}-${OP_VERSION}-${TARGET_FLAG}-SHA256.FORMAT"
 	;;
 	esac
+	# NOTE: no comment lines inside the GITHUB_ENV heredoc below: GitHub rejects "#" lines in GITHUB_ENV.
+	# Fw_MFormat is quoted because it may hold several formats ("bin ubi" for the AX6000);
+	# unquoted, sourcing GITHUB_ENV would try to run the second word as a command.
 	cat >> ${GITHUB_ENV} <<EOF
 WORK=${WORK}
 CONFIG_TEMP=${CONFIG_TEMP}
@@ -106,8 +109,6 @@ FEEDS_PKG=${GITHUB_WORKSPACE}/openwrt/package/feeds/packages
 Default_Title="${Default_Title}"
 Regex_Skip="${Regex_Skip}"
 Version_File=${Version_File}
-# Quoted: Fw_MFormat may hold several formats ("bin ubi" for the AX6000);
-# unquoted, sourcing GITHUB_ENV would try to run the second word as a command.
 Fw_MFormat="${Fw_MFormat}"
 FEEDS_CONF=${WORK}/feeds.conf.default
 Author_URL=${Author_URL}
