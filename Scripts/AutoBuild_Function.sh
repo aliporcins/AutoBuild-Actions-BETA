@@ -106,7 +106,9 @@ FEEDS_PKG=${GITHUB_WORKSPACE}/openwrt/package/feeds/packages
 Default_Title="${Default_Title}"
 Regex_Skip="${Regex_Skip}"
 Version_File=${Version_File}
-Fw_MFormat=${Fw_MFormat}
+# Quoted: Fw_MFormat may hold several formats ("bin ubi" for the AX6000);
+# unquoted, sourcing GITHUB_ENV would try to run the second word as a command.
+Fw_MFormat="${Fw_MFormat}"
 FEEDS_CONF=${WORK}/feeds.conf.default
 Author_URL=${Author_URL}
 ENV_FILE=${GITHUB_ENV}
