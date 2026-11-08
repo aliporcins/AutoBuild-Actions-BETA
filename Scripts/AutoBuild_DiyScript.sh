@@ -36,6 +36,17 @@ Firmware_Diy_Core() {
 	# 输出固件时丢弃包含该内容的固件/文件 (ext4 stays out of the Release dir;
 	# it remains available in the bin artifact)
 
+	# AX6000 (qualcommax/ipq50xx) only: the xmir-patcher flash flow needs
+	# the initramfs-factory.ubi as the temporary firmware, so "factory"
+	# must NOT be skipped for this target, and both .bin (sysupgrade)
+	# and .ubi (factory) outputs must be collected. Detect via the target
+	# line in .config (already copied + defconfig'd by the workflow
+	# before this runs). Other targets keep the defaults above.
+	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
+		Regex_Skip="packages|buildinfo|sha256sums|manifest|kernel|rootfs|itb|profile|ext4|json"
+		Fw_MFormat="bin ubi"
+	fi
+
 	AutoBuild_Features=false
 	# 添加 AutoBuild 固件特性, true: [开启]; false: [关闭]
 	# (false: no autoupdate app, no banner/profile overrides -- image stays
