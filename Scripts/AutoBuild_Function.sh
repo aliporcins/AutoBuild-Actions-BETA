@@ -360,12 +360,29 @@ Firmware_Diy_End() {
 		cd -
 		mv -f ${Fw_Path}/AutoBuild-* bin/Firmware
 	fi
+	if [[ -z $(ls -A "${WORK}/bin/Firmware" 2>/dev/null) ]]
+	then
+		ECHO "[Firmware_Diy_End] ERROR: bin/Firmware/ is empty after collection; failing here instead of at the upload step."
+		ECHO "Fw_MFormat=[${Fw_MFormat}] Regex_Skip=[${Regex_Skip}] TARGET_BOARD=${TARGET_BOARD} TARGET_SUBTARGET=${TARGET_SUBTARGET} Fw_Path=${Fw_Path}"
+		ECHO "--- Fw_Path contents ---"
+		ls -la "${Fw_Path}"
+		ECHO "--- sha256sums ---"
+		cat "${Fw_Path}/sha256sums" 2>/dev/null || ECHO "(sha256sums missing or unreadable)"
+		return 1
+	fi
 	ECHO "[Firmware_Diy_End] Done"
 }
 
 Process_Fw() {
 	while [[ $1 ]];do
-		Process_Fw_Core $1 $(List_Fw $1 | Regex)
+		# Collect by filesystem glob, not by parsing sha256sums: if the
+		# sha256sums text walk (List_sha256 / List_Fw) ever disagrees with
+		# the files on disk, the old code renamed nothing and failed
+		# silently with an empty bin/Firmware/ (run 42465835517).
+		for f in "${Fw_Path}"/*."$1"; do
+			[ -f "$f" ] || continue
+			Process_Fw_Core "$1" "$(basename "$f")"
+		done
 		shift
 	done
 }
@@ -374,48 +391,41 @@ Process_Fw_Core() {
 	Fw_Format=$1
 	shift
 	while [[ $1 ]];do
+		# Keep the Regex_Skip filter (rootfs/kernel/metadata stay out of
+		# the Release dir), applied to the filename itself instead of to
+		# sha256sums lines.
+		if [[ -n ${Regex_Skip} ]] && egrep -q "${Regex_Skip}" <<< "$1"; then
+			shift
+			continue
+		fi
+		Sha5=$(Get_sha256 "$1")
+		[[ -z ${Sha5} ]] && ECHO "WARNING: no sha256sums entry for [$1], using empty SHA256 in name"
 		case "${TARGET_BOARD}" in
 		x86)
 			# Fork change: ship EVERY matched combined image (plain + efi),
 			# not only the efi variant. Regex_Skip already filters out ext4,
 			# kernel, rootfs and metadata, so only the squashfs combined
 			# images reach this point.
-			Fw=${AutoBuild_Fw/SHA256/$(Get_sha256 $1)}
+			Fw=${AutoBuild_Fw/SHA256/${Sha5}}
 			Fw=${Fw/FORMAT/${Fw_Format}}
-			if [[ -f $1 ]]
+			if [[ -f ${Fw_Path}/$1 ]]
 			then
 				ECHO "Move x86 image [$1] to [${Fw}] ..."
-				mv -f $1 ${Fw}
+				mv -f "${Fw_Path}/$1" "${Fw_Path}/${Fw}"
 			fi
 		;;
 		*)
-			Fw=${AutoBuild_Fw/SHA256/$(Get_sha256 $1)}
+			Fw=${AutoBuild_Fw/SHA256/${Sha5}}
 			Fw=${Fw/FORMAT/${Fw_Format}}
-			if [[ -f $1 ]]
+			if [[ -f ${Fw_Path}/$1 ]]
 			then
 				ECHO "Move generic firmware [$1] to [${Fw}] ..."
-				mv -f $1 ${Fw}
+				mv -f "${Fw_Path}/$1" "${Fw_Path}/${Fw}"
 			fi
 		;;
 		esac
 		shift
 	done
-}
-
-List_Fw() {
-	if [[ -z $* ]]
-	then
-		for X in $(List_sha256);do
-			cut -d "*" -f2 <<< "${X}"
-		done
-	else
-		while [[ $1 ]];do
-			for X in $(List_sha256);do
-				[[ ${X} == *$1 ]] && cut -d "*" -f2 <<< "${X}"
-			done
-			shift
-		done
-	fi
 }
 
 Regex() {
@@ -431,7 +441,10 @@ List_MFormat() {
 }
 
 Get_sha256() {
-	List_sha256 | grep $1 | awk '{print $1}' | cut -c1-5
+	# Exact-match the filename in the raw sha256sums (handles both
+	# "<sha>  <file>" and "<sha> *<file>" lines); do not go through
+	# List_sha256/Regex, which can filter the line out.
+	awk -v f="$1" '($2 == f || $2 == "*" f) {print $1; exit}' "${Fw_Path}/sha256sums" 2>/dev/null | cut -c1-5
 }
 
 gz_Check() {
