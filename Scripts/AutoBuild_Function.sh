@@ -328,6 +328,14 @@ EOF
 Firmware_Diy_End() {
 	ECHO "[Firmware_Diy_End] Starting ..."
 	source ${GITHUB_ENV}
+	# GitHub Actions reads GITHUB_ENV literally, so the quoted heredoc lines
+	# (Fw_MFormat="bin ubi", Regex_Skip="...") arrive as env values WITH
+	# literal double-quote chars. Word-splitting then yields '"bin' / 'ubi"',
+	# the globs match nothing and bin/Firmware/ stays empty (run 42490293147:
+	# compile OK, three images on disk, zero collected). Bash sourcing strips
+	# the quotes, so this is a no-op in that case; strip them unconditionally.
+	Fw_MFormat="${Fw_MFormat//\"/}"
+	Regex_Skip="${Regex_Skip//\"/}"
 	ECHO "[$(date "+%H:%M:%S")] Actions Avaliable: $(df -h | grep "/dev/root" | awk '{printf $4}')"
 	cd ${WORK}
 	echo -e "### FIRMWARE OUTPUT ###"
