@@ -147,10 +147,10 @@ jobs:
         # clang-18 line mentioned it), so neither BTF path could build.
         sudo -E apt-get install -y dwarves
         sudo -E npm install -g pnpm
-        # curl -fsSL https://apt.llvm.org/llvm.sh | sudo -E bash -s -- 18
-        # sudo -E apt install -y clang-18 llvm-18 lld-18 pahole
-        # sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
-        # sudo update-alternatives --install /usr/bin/llvm-strip llvm-strip /usr/bin/llvm-strip-18 100
+        curl -fsSL https://apt.llvm.org/llvm.sh | sudo -E bash -s -- 18
+        sudo -E apt install -y clang-18 llvm-18 lld-18 pahole
+        sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
+        sudo update-alternatives --install /usr/bin/llvm-strip llvm-strip /usr/bin/llvm-strip-18 100
         # curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
         # sudo -E apt install -y nodejs
         # sudo -E npm install -g pnpm@10
