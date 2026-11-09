@@ -155,8 +155,7 @@ jobs:
         # curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
         # sudo -E apt install -y nodejs
         # sudo -E npm install -g pnpm@10
-      
-    # sudo -E systemctl daemon-reload
+          # sudo -E systemctl daemon-reload
         sudo -E apt clean
         node -v
         # fail-fast: Node 主版本必须 ≥20（pnpm 12 / vite 8 要求 node 20+；apt 自带的 node 12 会导致数小时后 daed web 构建失败且 web/ 为空）
