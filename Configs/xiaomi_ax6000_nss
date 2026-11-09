@@ -1,0 +1,130 @@
+# OpenWrt NSS (kuncy7/openwrt-nss-edma, kernel 6.18) / qualcommax ipq50xx / xiaomi_ax6000 -- seed .config for aliporcins/AutoBuild-Actions-BETA
+# Xiaomi AX6000 (RA72, IPQ5018) NSS test build: daed + luci-app-openclash + NSS hardware offload.
+# Built from kuncy7/openwrt-nss-edma branch c3po-tag-8021q (OpenWrt main 2026-10-09 + kernel 6.18 + NSS).
+# Parallel to the OpenWrt 25.12 fourth build (Configs/xiaomi_ax6000): this file and its
+# workflow (AutoBuild-xiaomi_ax6000_nss.yml) are independent -- the 25.12 build is untouched.
+# The workflow also reverts the tree's debug commit (MAGIC_SYSRQ_SERIAL/DEVMEM) before building.
+# No credentials baked in; default address stays 192.168.1.1 (NOT any production address).
+# Target outputs: openwrt-*-qualcommax-ipq50xx-xiaomi_ax6000-initramfs-factory.ubi
+# (temporary firmware for xmir-patcher) + *-squashfs-sysupgrade.bin (official firmware).
+# NOTE: start from this fresh .config -- do NOT reuse an old .config that still has
+# CONFIG_PACKAGE_ath11k-firmware-ipq5018=y (the 2.4 GHz radio will not come up).
+CONFIG_TARGET_qualcommax=y
+CONFIG_TARGET_qualcommax_ipq50xx=y
+CONFIG_TARGET_qualcommax_ipq50xx_DEVICE_xiaomi_ax6000=y
+CONFIG_TARGET_ROOTFS_SQUASHFS=y
+
+# eBPF toolchain: use the HOST clang (same fix as the x86_64 config;
+# dae needs eBPF, and without an explicit choice defconfig leaves the
+# BPF_TOOLCHAIN choice unset and bpf-headers fails).
+CONFIG_BPF_TOOLCHAIN_HOST=y
+
+# Base: LuCI + Chinese packs + tun
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-dhcp-zh-cn=y
+CONFIG_PACKAGE_luci-compat=y
+CONFIG_PACKAGE_kmod-tun=y
+
+# WireGuard trio
+CONFIG_PACKAGE_kmod-wireguard=y
+CONFIG_PACKAGE_luci-proto-wireguard=y
+CONFIG_PACKAGE_wireguard-tools=y
+
+# Scheduler kmods for dae traffic control: NET_SCH_INGRESS / NET_CLS_BPF /
+# NET_CLS_ACT are provided by these (daed's DEPENDS pulls them in too, but
+# select explicitly so defconfig enables the kernel options).
+CONFIG_PACKAGE_kmod-sched-core=y
+CONFIG_PACKAGE_kmod-sched-bpf=y
+
+# Official feeds
+CONFIG_PACKAGE_ddns-scripts=y
+CONFIG_PACKAGE_ddns-scripts-aliyun=y
+CONFIG_PACKAGE_ddns-scripts-dnspod=y
+CONFIG_PACKAGE_luci-app-ddns=y
+CONFIG_PACKAGE_nginx-ssl=y
+CONFIG_PACKAGE_ttyd=y
+CONFIG_PACKAGE_luci-app-ttyd=y
+CONFIG_PACKAGE_miniupnpd=y
+CONFIG_PACKAGE_luci-app-upnp=y
+CONFIG_PACKAGE_luci-app-filemanager=y
+CONFIG_PACKAGE_cloudflared=y
+
+# External packages (cloned at pinned commits by Scripts/AutoBuild_DiyScript.sh)
+CONFIG_PACKAGE_daed=y
+CONFIG_PACKAGE_luci-app-daede=y
+CONFIG_PACKAGE_luci-app-openclash=y
+CONFIG_PACKAGE_luci-app-lucky=y
+CONFIG_PACKAGE_lucky=y
+CONFIG_PACKAGE_luci-app-diskman=y
+CONFIG_PACKAGE_luci-app-ramfree=y
+CONFIG_PACKAGE_luci-app-ota=y
+CONFIG_PACKAGE_luci-app-autoreboot=y
+
+# Vendored in this repo under package/ (user's own package, read-only upstream)
+CONFIG_PACKAGE_luci-app-totp=y
+
+# Kernel BTF for dae/daed CO-RE (same as the x86_64 config): daed's BTF
+# choice defaults to DAED_USE_KERNEL_BTF but depends on KERNEL_DEBUG_INFO_BTF;
+# without it the choice falls to DAED_USE_VMLINUX_BTF and the build dies at
+# package/install on `vmlinux-btf (no such package)`.
+# (pahole for BTF generation comes from the workflow's dwarves install.)
+CONFIG_KERNEL_DEBUG_INFO_BTF=y
+# DEBUG_INFO_REDUCED is off by default in OpenWrt Config-kernel.in, and
+# DEBUG_INFO_BTF depends on !REDUCED; keep it explicitly off so defconfig
+# cannot silently drop BTF.
+# CONFIG_KERNEL_DEBUG_INFO_REDUCED is not set
+CONFIG_KERNEL_DEBUG_INFO=y
+CONFIG_KERNEL_KALLSYMS=y
+CONFIG_KERNEL_CGROUP_BPF=y
+
+# Extra kernel options dae needs (bool options -- no package pulls these in,
+# so they must be set explicitly; see DAED-FEASIBILITY.md section 1).
+# The stock qualcommax/ipq50xx target config leaves all of these off.
+CONFIG_KERNEL_CGROUPS=y
+CONFIG_KERNEL_KPROBES=y
+CONFIG_KERNEL_KPROBE_EVENTS=y
+CONFIG_KERNEL_BPF_EVENTS=y
+CONFIG_KERNEL_BPF_STREAM_PARSER=y
+CONFIG_KERNEL_XDP_SOCKETS=y
+
+# --- NSS hardware offload (kuncy7/openwrt-nss-edma, README.ipq50xx.md) ---
+# nss-tools-dwmac MUST be =y (not =m): it pulls in every kmod the plane needs
+# and is the package that actually arms the firmware. =m builds it but leaves
+# it out of the image, and the plane never comes up.
+CONFIG_PACKAGE_nss-tools-dwmac=y
+# NSS firmware 12.5-210 (feed default); 12.2-156 also works but build for the
+# version you run (Wi-Fi peer stats layout differs).
+CONFIG_PACKAGE_nss-firmware=y
+CONFIG_NSS_FIRMWARE_VERSION_12_5=y
+# AX6000 has 512MB RAM: MEDIUM (std) memory profile.
+CONFIG_NSS_MEM_PROFILE_MEDIUM=y
+# qca-nss-drv features the plane uses
+CONFIG_NSS_DRV_VLAN_ENABLE=y
+CONFIG_NSS_DRV_IPV6_ENABLE=y
+CONFIG_NSS_DRV_VIRT_IF_ENABLE=y
+# PPPoE: the kernel side builds, but ECM only accelerates PPPoE when the
+# connection manager is present -- without it flows are tracked and never
+# offloaded, with nothing in the log to say so.
+CONFIG_PACKAGE_kmod-ppp=y
+CONFIG_PACKAGE_kmod-pppoe=y
+CONFIG_PACKAGE_kmod-qca-nss-drv-pppoe=y
+# ath11k with the NSS patches (Wi-Fi offload); the validated combination for
+# the wired plane as well.
+CONFIG_PACKAGE_MAC80211_NSS_SUPPORT=y
+CONFIG_ATH11K_NSS_SUPPORT=y
+CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE=y
+CONFIG_NSS_DRV_WIFI_EXT_VDEV_ENABLE=y
+# NSS diagnostics (from the tree's CI config): netlink interface + nssinfo tool.
+CONFIG_PACKAGE_kmod-qca-nss-drv-netlink=y
+CONFIG_PACKAGE_nssinfo=y
+CONFIG_PACKAGE_libnl-nss=y
+
+# ath11k firmware: WLAN.HK.2.7.0.1 (ath11k-firmware-ipq5018-qcn6122).
+# Do NOT use the stock 2.9.r4 blob: on this driver it makes the internal
+# 2.4 GHz radio's Q6 assert (PHY0M3) ~13 minutes after the BSS comes up.
+# The tree's xiaomi_ax6000 DEVICE_PACKAGES already defaults to -qcn6122
+# (the old ath11k-firmware-ipq5018 package does not exist in this tree);
+# set it explicitly so the choice is visible in the diffconfig.
+CONFIG_PACKAGE_ath11k-firmware-ipq5018-qcn6122=y
