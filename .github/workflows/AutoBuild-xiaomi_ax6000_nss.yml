@@ -140,7 +140,7 @@ jobs:
           rsync scons squashfs-tools subversion swig texinfo \
           uglifyjs unzip vim wget xmlto xxd zlib1g-dev \
           python-is-python3 flex
-        sudo -E apt-get install -y clang llvm npm
+        sudo -E apt-get install -y npm
         # dwarves provides pahole, required to generate kernel BTF
         # (CONFIG_KERNEL_DEBUG_INFO_BTF) and by the vmlinux-btf fallback
         # package; run 9's runner had no pahole (only a commented-out
@@ -150,11 +150,13 @@ jobs:
         curl -fsSL https://apt.llvm.org/llvm.sh | sudo -E bash -s -- 18
         sudo -E apt install -y clang-18 llvm-18 lld-18 pahole
         sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
+        sudo update-alternatives --set clang /usr/bin/clang-18
         sudo update-alternatives --install /usr/bin/llvm-strip llvm-strip /usr/bin/llvm-strip-18 100
         # curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
         # sudo -E apt install -y nodejs
         # sudo -E npm install -g pnpm@10
-        # sudo -E systemctl daemon-reload
+      
+    # sudo -E systemctl daemon-reload
         sudo -E apt clean
         node -v
         # fail-fast: Node 主版本必须 ≥20（pnpm 12 / vite 8 要求 node 20+；apt 自带的 node 12 会导致数小时后 daed web 构建失败且 web/ 为空）
@@ -166,6 +168,8 @@ jobs:
         df -h
         free -m
         echo "CPU Cores: $(nproc)"
+        echo "Clang version:"
+        clang --version
 
     - name: Cache ccache (best-effort; first build is cold regardless)
       uses: actions/cache@v4
