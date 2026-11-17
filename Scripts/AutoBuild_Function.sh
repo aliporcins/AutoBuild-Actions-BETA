@@ -211,6 +211,15 @@ EOF
 			sed -i "s/${Old_IP}/${Default_IP}/g" ${BASE_FILES}/bin/config_generate
 		fi
 	fi
+	if [[ -n ${Tempoary_HOSTNAME} && ${Tempoary_HOSTNAME} =~ ^[A-Za-z0-9][A-Za-z0-9-]*$ ]]
+	then
+		Old_Hostname=$(grep -o "hostname='[^']*'" ${BASE_FILES}/bin/config_generate | head -1 | cut -d"'" -f2)
+		if [[ -n ${Old_Hostname} && ! ${Tempoary_HOSTNAME} == ${Old_Hostname} ]]
+		then
+			ECHO "Setting default Hostname to ${Tempoary_HOSTNAME} ..."
+			sed -i "s/hostname='${Old_Hostname}'/hostname='${Tempoary_HOSTNAME}'/" ${BASE_FILES}/bin/config_generate
+		fi
+	fi
  	echo -e "### VARIABLE LIST ###\n$(cat ${GITHUB_ENV})\n"
 	ECHO "[Firmware_Diy_Main] Done"
 }
