@@ -51,6 +51,13 @@ CONFIG_PACKAGE_luci-app-upnp=y
 CONFIG_PACKAGE_luci-app-filemanager=y
 CONFIG_PACKAGE_cloudflared=y
 
+# mDNS responder (added 2026-11-18, user request: ax6000.local out of the box).
+# umdns ships its own default /etc/config/umdns (list network lan) which
+# announces the system hostname on lan; the workflow's Tempoary_HOSTNAME
+# block sets hostname=ax6000 at build time, so no manual step is needed
+# after flashing. Android devices do not resolve .local (no mDNS client).
+CONFIG_PACKAGE_umdns=y
+
 # Wake-on-LAN (added 2026-11-13, user request; only these two packages).
 # etherwake (packages feed) sends magic packets from the command line;
 # luci-app-wol (luci feed) provides the LuCI web UI (depends on etherwake).
