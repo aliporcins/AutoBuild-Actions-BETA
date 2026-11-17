@@ -45,6 +45,9 @@ on:
       Tempoary_IP:
         description: '固件 IP 地址 [可选]'
         default: ''
+      Tempoary_HOSTNAME:
+        description: '固件主机名 [可选]'
+        default: ''
       UPLOAD_RELEASES:
         description: '上传固件到 Releases'
         default: 'true'
@@ -202,6 +205,11 @@ jobs:
         then
             echo "IP: [${{ github.event.inputs.Tempoary_IP }}]"
             echo "Tempoary_IP=${{ github.event.inputs.Tempoary_IP }}" >> $GITHUB_ENV
+        fi
+        if [ -n "${{ github.event.inputs.Tempoary_HOSTNAME }}" ]
+        then
+            echo "HOSTNAME: [${{ github.event.inputs.Tempoary_HOSTNAME }}]"
+            echo "Tempoary_HOSTNAME=${{ github.event.inputs.Tempoary_HOSTNAME }}" >> $GITHUB_ENV
         fi
         if [ -n "${{ github.event.inputs.Tempoary_FLAG }}" ]
         then
