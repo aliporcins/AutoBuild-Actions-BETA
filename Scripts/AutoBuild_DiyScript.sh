@@ -61,7 +61,13 @@ Firmware_Diy() {
 	# External packages, ALL pinned to exact commits (core3 lesson: never float
 	# on a moving branch). Runs after feeds install, before make defconfig.
 	# package/luci-app-totp is vendored in this repo (user's own package);
-	# it needs no clone here.
+	# it needs no clone here -- BUT it does need copying into the tree:
+	# the repo's package/ dir is not the openwrt tree's package/ dir, and
+	# nothing else copies it, so make defconfig silently dropped
+	# CONFIG_PACKAGE_luci-app-totp and every NSS build so far shipped
+	# without TOTP (found 2026-11-18). Copy it like the other externals.
+	cp -a $GITHUB_WORKSPACE/package/luci-app-totp package/luci-app-totp
+	[ -d package/luci-app-totp ] || { echo "ERROR: vendored luci-app-totp missing from tree"; exit 1; }
 
 	# Defensive: official 25.12 feeds ship no daed, but drop any feed copy
 	# if one ever appears, so the pinned kenzok8 copy is the only one.
