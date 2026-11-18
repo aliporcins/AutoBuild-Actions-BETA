@@ -2,8 +2,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-totp
-PKG_VERSION:=0.1.0-r6
-PKG_RELEASE:=1
+# apk-tools v3 只认一个 -r<数字> 后缀：0.1.0-r6-r1（VERSION 里带 -r6 再加
+# RELEASE 1）会被判 invalid version，构建在打包 luci-app-totp 时失败
+# （run 44217271134）。把 -r6 拆到 RELEASE 里，成品仍是 0.1.0-r6。
+PKG_VERSION:=0.1.0
+PKG_RELEASE:=6
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=experimental
 
