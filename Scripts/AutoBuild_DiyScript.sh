@@ -168,6 +168,30 @@ Firmware_Diy() {
 	git clone https://github.com/Wenjw28/luci-app-autoreboot /tmp/autoreboot-src
 	git -C /tmp/autoreboot-src checkout 53f6e73bfe8b5416a4e602791870c0d6e0f0920c
 	cp -a /tmp/autoreboot-src package/luci-app-autoreboot
+	# ROOT CAUSE #3 (2026-11-18, run 44265325657): upstream ships all 4
+	# files under files/ (files/etc/config, files/etc/init.d,
+	# files/usr/lib/lua/luci/controller, files/usr/lib/lua/luci/model/cbi),
+	# but luci.mk only installs luasrc/, ucode/, htdocs/ and root/ --
+	# files/ is silently ignored, so the package built EMPTY (apk db I:1,
+	# zero files) while the symbol and the config checks all passed.
+	# Restructure files/ into luci.mk layout, mirroring vendored
+	# luci-app-totp (luasrc/ + root/). Fail fast if upstream's files/
+	# layout changes (pinned commit 53f6e73 has exactly these 4 files).
+	[ "$(find package/luci-app-autoreboot/files -type f | wc -l)" -eq 4 ] || { echo "ERROR: autoreboot files/ layout changed (expected exactly 4 files)"; exit 1; }
+	mkdir -p package/luci-app-autoreboot/luasrc/controller package/luci-app-autoreboot/luasrc/model/cbi package/luci-app-autoreboot/root/etc/config package/luci-app-autoreboot/root/etc/init.d
+	mv package/luci-app-autoreboot/files/usr/lib/lua/luci/controller/autoreboot.lua package/luci-app-autoreboot/luasrc/controller/
+	mv package/luci-app-autoreboot/files/usr/lib/lua/luci/model/cbi/autoreboot.lua package/luci-app-autoreboot/luasrc/model/cbi/
+	mv package/luci-app-autoreboot/files/etc/config/autoreboot package/luci-app-autoreboot/root/etc/config/
+	mv package/luci-app-autoreboot/files/etc/init.d/autoreboot package/luci-app-autoreboot/root/etc/init.d/
+	# init script arrives 664 from git; it must be executable or procd
+	# cannot run it and `autoreboot enable` creates no rc.d symlink.
+	chmod 755 package/luci-app-autoreboot/root/etc/init.d/autoreboot
+	rm -rf package/luci-app-autoreboot/files
+	for f in luasrc/controller/autoreboot.lua luasrc/model/cbi/autoreboot.lua root/etc/config/autoreboot root/etc/init.d/autoreboot; do
+		[ -f "package/luci-app-autoreboot/$f" ] || { echo "ERROR: autoreboot file missing after restructure: $f"; exit 1; }
+	done
+	[ -x package/luci-app-autoreboot/root/etc/init.d/autoreboot ] || { echo "ERROR: autoreboot init script not executable"; exit 1; }
+	[ ! -e package/luci-app-autoreboot/files ] || { echo "ERROR: autoreboot files/ still present after restructure"; exit 1; }
 	sed -i 's/LUCI_DEPENDS:=+cron +luci-base/LUCI_DEPENDS:=+luci-base +luci-compat/' package/luci-app-autoreboot/Makefile
 	grep -q "LUCI_DEPENDS:=+luci-base +luci-compat" package/luci-app-autoreboot/Makefile || { echo "ERROR: autoreboot LUCI_DEPENDS fix did not apply"; exit 1; }
 	if grep -q "LUCI_DEPENDS:=.*+cron" package/luci-app-autoreboot/Makefile; then echo "ERROR: autoreboot Makefile still references +cron"; exit 1; fi

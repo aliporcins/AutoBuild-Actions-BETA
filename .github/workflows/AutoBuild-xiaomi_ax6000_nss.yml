@@ -303,6 +303,7 @@ jobs:
         ./scripts/feeds install -a
         echo "=== DIAG: autoreboot after feeds install ==="
         ls -ld package/luci-app-autoreboot && grep -E "PKG_NAME|LUCI_DEPENDS" package/luci-app-autoreboot/Makefile || echo "DIAG: autoreboot dir/Makefile MISSING after feeds install"
+        find package/luci-app-autoreboot/luasrc package/luci-app-autoreboot/root -type f 2>/dev/null || echo "DIAG: autoreboot luasrc/root layout MISSING (empty package risk)"
         make defconfig
         echo "=== DIAG: defconfig outcome ==="
         grep -A4 'config PACKAGE_luci-app-autoreboot' tmp/.config-package.in || echo "DIAG: autoreboot symbol NOT in tmp/.config-package.in"
@@ -331,6 +332,22 @@ jobs:
         cd openwrt
         make -j$(nproc) || make -j1 V=s
         [ "$?" == 0 ] && echo "Compile_Result=true" >> $GITHUB_ENV || echo "Compile_Result=false" >> $GITHUB_ENV
+        # POST-BUILD GATE (2026-11-18, run 44265325657): autoreboot built
+        # EMPTY (apk db I:1, zero files) while every config check passed --
+        # upstream's files/ layout is ignored by luci.mk. Verify the built
+        # .apk actually contains the 4 files; fail the build otherwise so
+        # an empty package can never reach the Release again. This only
+        # runs when make succeeded (the line above exits the step on
+        # build failure under bash -e).
+        echo "=== POST-BUILD GATE: autoreboot apk content ==="
+        APK=$(find bin/packages -name 'luci-app-autoreboot_*.apk' 2>/dev/null | head -n1)
+        [ -n "$APK" ] || { echo "ERROR: luci-app-autoreboot apk not found under bin/packages"; exit 1; }
+        echo "Found apk: $APK"
+        tar tzf "$APK" > /tmp/autoreboot-apk-list.txt || { echo "ERROR: cannot list $APK"; exit 1; }
+        for f in etc/init.d/autoreboot etc/config/autoreboot usr/lib/lua/luci/controller/autoreboot.lua usr/lib/lua/luci/model/cbi/autoreboot.lua; do
+          grep -q "$f\$" /tmp/autoreboot-apk-list.txt || { echo "ERROR: autoreboot apk is missing $f (empty package)"; exit 1; }
+        done
+        echo "POST-BUILD GATE OK: autoreboot apk contains all 4 files"
 
     - name: Checkout Firmware
       if: steps.compile.outcome == 'success' && !cancelled()
