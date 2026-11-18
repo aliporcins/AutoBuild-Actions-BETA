@@ -171,6 +171,22 @@ Firmware_Diy() {
 	sed -i 's/LUCI_DEPENDS:=+cron +luci-base/LUCI_DEPENDS:=+luci-base +luci-compat/' package/luci-app-autoreboot/Makefile
 	grep -q "LUCI_DEPENDS:=+luci-base +luci-compat" package/luci-app-autoreboot/Makefile || { echo "ERROR: autoreboot LUCI_DEPENDS fix did not apply"; exit 1; }
 	if grep -q "LUCI_DEPENDS:=.*+cron" package/luci-app-autoreboot/Makefile; then echo "ERROR: autoreboot Makefile still references +cron"; exit 1; fi
+	# ROOT CAUSE #2 (2026-11-18, runs 44255529707 + 44261474673 DIAG):
+	# even with +cron fixed, the package was invisible to Kconfig -- its
+	# symbol never appears in tmp/.config-package.in. include/scan.mk
+	# only discovers a package whose OWN Makefile contains a literal
+	# "call $(BuildPackage...)" line (grep over package/*/Makefile);
+	# upstream's Makefile ends at "include .../luci.mk" and has no such
+	# line -- luci.mk:404 does call BuildPackage (LUCI_BUILD_PACKAGES :=
+	# $(PKG_NAME)), but the scanner never reads luci.mk. Every other
+	# external package here carries the line (diskman/ramfree/ota as a
+	# comment, totp as comment + eval). Add both, mirroring totp.
+	# Without this, make defconfig silently drops the symbol no matter
+	# what the Config file requests. Fail fast if the line is absent.
+	echo "" >> package/luci-app-autoreboot/Makefile
+	echo "# call BuildPackage - OpenWrt buildroot signature" >> package/luci-app-autoreboot/Makefile
+	echo '$(eval $(call BuildPackage,$(PKG_NAME)))' >> package/luci-app-autoreboot/Makefile
+	grep -q 'call BuildPackage' package/luci-app-autoreboot/Makefile || { echo "ERROR: autoreboot BuildPackage line did not apply"; exit 1; }
 
 	# cloudflared 2026.10.7 -> 2026.11.1 (upstream release 2026-11-17;
 	# feed still at 2026.10.7 as of 2026-11-18). Bump the feed Makefile
