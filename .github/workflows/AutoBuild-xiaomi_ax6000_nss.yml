@@ -295,6 +295,15 @@ jobs:
         cd openwrt
         ./scripts/feeds install -a
         make defconfig
+        # Fail fast on silent defconfig drops: these symbols were lost
+        # without a word in earlier runs (autoreboot: +cron dep;
+        # totp: not copied into the tree; i18n: language not enabled).
+        # A missing symbol must abort the build, not ship an image
+        # missing a promised feature.
+        for pkg in luci-app-autoreboot luci-app-totp luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn kmod-usb-storage block-mount cloudflared; do
+          grep -q "^CONFIG_PACKAGE_${pkg}=y" .config || { echo "ERROR: CONFIG_PACKAGE_${pkg} dropped by defconfig"; exit 1; }
+        done
+        grep -q "^CONFIG_LUCI_LANG_zh_Hans=y" .config || { echo "ERROR: CONFIG_LUCI_LANG_zh_Hans dropped by defconfig"; exit 1; }
         make download -j$(nproc)
 
     - name: Build OpenWrt

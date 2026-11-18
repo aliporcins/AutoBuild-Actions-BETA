@@ -154,8 +154,31 @@ Firmware_Diy() {
 	# Scheduled reboot UI (Lua; upstream has no luci-compat dep, add it
 	# fork-locally so it renders on ucode LuCI; its function is one cron
 	# line if it still fails Phase 1 verification)
+	# ROOT CAUSE (2026-11-18, run 44179668449 + 44237725082 logs): the
+	# package was cloned/copied fine but `make defconfig` silently
+	# dropped CONFIG_PACKAGE_luci-app-autoreboot -- its LUCI_DEPENDS
+	# named `+cron`, which is not a package in OpenWrt main (no
+	# standalone cron package exists; crond/crontab come from busybox,
+	# and no package in the luci feed depends on +cron). An
+	# unsatisfiable dep makes the symbol unselectable and defconfig
+	# drops the =y line with no warning. Fix: drop +cron (busybox
+	# already provides crond), keep +luci-compat. Fail fast if the
+	# sed does not match (upstream reordering the line must not
+	# silently reintroduce the drop).
 	git clone https://github.com/Wenjw28/luci-app-autoreboot /tmp/autoreboot-src
 	git -C /tmp/autoreboot-src checkout 53f6e73bfe8b5416a4e602791870c0d6e0f0920c
 	cp -a /tmp/autoreboot-src package/luci-app-autoreboot
-	sed -i 's/LUCI_DEPENDS:=+cron +luci-base/LUCI_DEPENDS:=+cron +luci-base +luci-compat/' package/luci-app-autoreboot/Makefile
+	sed -i 's/LUCI_DEPENDS:=+cron +luci-base/LUCI_DEPENDS:=+luci-base +luci-compat/' package/luci-app-autoreboot/Makefile
+	grep -q "LUCI_DEPENDS:=+luci-base +luci-compat" package/luci-app-autoreboot/Makefile || { echo "ERROR: autoreboot LUCI_DEPENDS fix did not apply"; exit 1; }
+	if grep -q "LUCI_DEPENDS:=.*+cron" package/luci-app-autoreboot/Makefile; then echo "ERROR: autoreboot Makefile still references +cron"; exit 1; fi
+
+	# cloudflared 2026.10.7 -> 2026.11.1 (upstream release 2026-11-17;
+	# feed still at 2026.10.7 as of 2026-11-18). Bump the feed Makefile
+	# in place; the feed's Go is 1.27.4 which satisfies go.mod's
+	# `go 1.27.4`, so no toolchain change is needed. Remove this block
+	# once the feed passes 2026.11.1. Fail fast if the sed does not match.
+	sed -i 's/^PKG_VERSION:=.*/PKG_VERSION:=2026.11.1/' feeds/packages/net/cloudflared/Makefile
+	sed -i 's/^PKG_HASH:=.*/PKG_HASH:=d72ba7465d392a7c82be85e9417c0c923aa69e7c6dbc9baaeb42bb49a8f0572d/' feeds/packages/net/cloudflared/Makefile
+	grep -q "^PKG_VERSION:=2026.11.1" feeds/packages/net/cloudflared/Makefile || { echo "ERROR: cloudflared version bump did not apply"; exit 1; }
+	grep -q "^PKG_HASH:=d72ba7465d392a7c82be85e9417c0c923aa69e7c6dbc9baaeb42bb49a8f0572d" feeds/packages/net/cloudflared/Makefile || { echo "ERROR: cloudflared hash bump did not apply"; exit 1; }
 }
