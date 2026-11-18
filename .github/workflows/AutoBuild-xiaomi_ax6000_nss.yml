@@ -339,20 +339,42 @@ jobs:
         # an empty package can never reach the Release again. This only
         # runs when make succeeded (the line above exits the step on
         # build failure under bash -e).
-        # NOTE (run 44281351061): the first version of this gate searched
-        # bin/packages and failed the build even though the package was
-        # fine -- in this tree BIN_DIR is bin/targets/<board>/<subtarget>
-        # (rules.mk:284), so .apk files live under
-        # bin/targets/<board>/<subtarget>/packages/<arch>/<feed>/, with
-        # symlinks merged into staging_dir/packages/<board>/
-        # (PACKAGE_DIR_ALL, rules.mk:373). Search both locations.
+        # GATE RULES (2026-11-18; runs 44281351061 + 44302462584 both
+        # failed a GOOD build on gate bugs, never on the firmware):
+        # - Locate the .apk with `find` under bin/ -- NEVER hard-code a
+        #   path. bin/packages was wrong (44281351061); bin/targets +
+        #   staging_dir/packages was right but the glob was wrong
+        #   (44302462584): apk v3 filenames use a HYPHEN after the
+        #   name, e.g. luci-app-autoreboot-1.0-r1.apk (real 25.12.0
+        #   sample: luci-app-commands-26.320.60423~5331286.apk), NOT
+        #   the old .ipk-style underscore. The glob below matches
+        #   both separators so a naming change cannot fail the gate.
+        # - .apk is ADB format (magic ADBd, DEFLATE), NOT a gzip tar,
+        #   so `tar tzf` can NEVER list it. Use the host apk tool
+        #   (staging_dir/host/bin/apk -- the tree builds it and uses
+        #   it to install the rootfs, include/rootfs.mk:48) to
+        #   extract and check the files on disk.
+        # - A NEW gate goes live WARN-ONLY first and becomes blocking
+        #   only after one run on real build artifacts proves it
+        #   passes on a good build. This gate stays blocking because
+        #   it is a bug fix to an existing gate (not a new gate) and
+        #   the fixed logic was validated locally against a real
+        #   25.12.0 .apk + the real upstream autoreboot files (8/8
+        #   tests: old glob reproduces the failure, new glob finds
+        #   the file, extract works, content check passes on present
+        #   files and fails on absent ones) before landing.
         echo "=== POST-BUILD GATE: autoreboot apk content ==="
-        APK=$(find bin/targets staging_dir/packages -name 'luci-app-autoreboot_*.apk' 2>/dev/null | head -n1)
-        [ -n "$APK" ] || { echo "ERROR: luci-app-autoreboot apk not found under bin/targets or staging_dir/packages"; exit 1; }
+        APK=$(find bin -name 'luci-app-autoreboot*.apk' 2>/dev/null | head -n1)
+        [ -n "$APK" ] || { echo "ERROR: luci-app-autoreboot apk not found under bin"; exit 1; }
         echo "Found apk: $APK"
-        tar tzf "$APK" > /tmp/autoreboot-apk-list.txt || { echo "ERROR: cannot list $APK"; exit 1; }
+        APK_BIN=$(find staging_dir/host/bin -maxdepth 1 -name apk -type f 2>/dev/null | head -n1)
+        [ -n "$APK_BIN" ] || { echo "ERROR: host apk tool not found under staging_dir/host/bin"; exit 1; }
+        echo "Host apk tool: $APK_BIN"
+        APK_ABS="$(pwd)/$APK"
+        rm -rf /tmp/autoreboot-apk-x && mkdir -p /tmp/autoreboot-apk-x
+        (cd /tmp/autoreboot-apk-x && "$APK_BIN" extract --allow-untrusted "$APK_ABS") || { echo "ERROR: cannot extract $APK"; exit 1; }
         for f in etc/init.d/autoreboot etc/config/autoreboot usr/lib/lua/luci/controller/autoreboot.lua usr/lib/lua/luci/model/cbi/autoreboot.lua; do
-          grep -q "$f\$" /tmp/autoreboot-apk-list.txt || { echo "ERROR: autoreboot apk is missing $f (empty package)"; exit 1; }
+          [ -f "/tmp/autoreboot-apk-x/$f" ] || { echo "ERROR: autoreboot apk is missing $f (empty package)"; exit 1; }
         done
         echo "POST-BUILD GATE OK: autoreboot apk contains all 4 files"
 
