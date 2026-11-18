@@ -308,7 +308,7 @@ jobs:
         grep -A4 'config PACKAGE_luci-app-autoreboot' tmp/.config-package.in || echo "DIAG: autoreboot symbol NOT in tmp/.config-package.in"
         grep "^CONFIG_PACKAGE_luci-app-autoreboot" .config || echo "DIAG: autoreboot NOT in .config after defconfig"
         grep "^CONFIG_PACKAGE_luci-app-totp" .config || echo "DIAG: totp NOT in .config (control)"
-        grep "^CONFIG_PACKAGE_luci-app-diskman" .config || echo "DIAG: diskman NOT in .config (control)"
+        grep "^CONFIG_PACKAGE_luci-app-ramfree" .config || echo "DIAG: ramfree NOT in .config (control)"
         grep "^CONFIG_PACKAGE_luci-compat" .config || echo "DIAG: luci-compat NOT selected"
         grep "^CONFIG_PACKAGE_kmod-usb-storage" .config && echo "DIAG: usb-storage still selected (unexpected, AX6000 has no USB port)" || echo "DIAG: usb-storage absent as expected"
         grep "^CONFIG_PACKAGE_block-mount" .config && echo "DIAG: block-mount still selected (unexpected, AX6000 has no USB port)" || echo "DIAG: block-mount absent as expected"
