@@ -339,9 +339,16 @@ jobs:
         # an empty package can never reach the Release again. This only
         # runs when make succeeded (the line above exits the step on
         # build failure under bash -e).
+        # NOTE (run 44281351061): the first version of this gate searched
+        # bin/packages and failed the build even though the package was
+        # fine -- in this tree BIN_DIR is bin/targets/<board>/<subtarget>
+        # (rules.mk:284), so .apk files live under
+        # bin/targets/<board>/<subtarget>/packages/<arch>/<feed>/, with
+        # symlinks merged into staging_dir/packages/<board>/
+        # (PACKAGE_DIR_ALL, rules.mk:373). Search both locations.
         echo "=== POST-BUILD GATE: autoreboot apk content ==="
-        APK=$(find bin/packages -name 'luci-app-autoreboot_*.apk' 2>/dev/null | head -n1)
-        [ -n "$APK" ] || { echo "ERROR: luci-app-autoreboot apk not found under bin/packages"; exit 1; }
+        APK=$(find bin/targets staging_dir/packages -name 'luci-app-autoreboot_*.apk' 2>/dev/null | head -n1)
+        [ -n "$APK" ] || { echo "ERROR: luci-app-autoreboot apk not found under bin/targets or staging_dir/packages"; exit 1; }
         echo "Found apk: $APK"
         tar tzf "$APK" > /tmp/autoreboot-apk-list.txt || { echo "ERROR: cannot list $APK"; exit 1; }
         for f in etc/init.d/autoreboot etc/config/autoreboot usr/lib/lua/luci/controller/autoreboot.lua usr/lib/lua/luci/model/cbi/autoreboot.lua; do
