@@ -293,14 +293,33 @@ jobs:
     - name: Pre-download Libraries
       run: |
         cd openwrt
+        # DIAG (2026-11-18, run 44255529707): the fail-fast below aborted on
+        # CONFIG_PACKAGE_luci-app-autoreboot even though the Config requests
+        # it, the package was copied into package/ by Firmware_Diy, and its
+        # Makefile was fixed (+cron dropped). Print the ground truth at each
+        # stage so the next failure names the culprit instead of guessing.
+        echo "=== DIAG: autoreboot before feeds install ==="
+        ls -ld package/luci-app-autoreboot && grep -E "PKG_NAME|LUCI_DEPENDS" package/luci-app-autoreboot/Makefile || echo "DIAG: autoreboot dir/Makefile MISSING before feeds install"
         ./scripts/feeds install -a
+        echo "=== DIAG: autoreboot after feeds install ==="
+        ls -ld package/luci-app-autoreboot && grep -E "PKG_NAME|LUCI_DEPENDS" package/luci-app-autoreboot/Makefile || echo "DIAG: autoreboot dir/Makefile MISSING after feeds install"
         make defconfig
+        echo "=== DIAG: defconfig outcome ==="
+        grep -A4 'config PACKAGE_luci-app-autoreboot' tmp/.config-package.in || echo "DIAG: autoreboot symbol NOT in tmp/.config-package.in"
+        grep "^CONFIG_PACKAGE_luci-app-autoreboot" .config || echo "DIAG: autoreboot NOT in .config after defconfig"
+        grep "^CONFIG_PACKAGE_luci-app-totp" .config || echo "DIAG: totp NOT in .config (control)"
+        grep "^CONFIG_PACKAGE_luci-app-diskman" .config || echo "DIAG: diskman NOT in .config (control)"
+        grep "^CONFIG_PACKAGE_luci-compat" .config || echo "DIAG: luci-compat NOT selected"
+        grep "^CONFIG_PACKAGE_kmod-usb-storage" .config && echo "DIAG: usb-storage still selected (unexpected, AX6000 has no USB port)" || echo "DIAG: usb-storage absent as expected"
+        grep "^CONFIG_PACKAGE_block-mount" .config && echo "DIAG: block-mount still selected (unexpected, AX6000 has no USB port)" || echo "DIAG: block-mount absent as expected"
         # Fail fast on silent defconfig drops: these symbols were lost
         # without a word in earlier runs (autoreboot: +cron dep;
         # totp: not copied into the tree; i18n: language not enabled).
         # A missing symbol must abort the build, not ship an image
         # missing a promised feature.
-        for pkg in luci-app-autoreboot luci-app-totp luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn kmod-usb-storage block-mount cloudflared; do
+        # NOTE: kmod-usb-storage/block-mount were in this list in 2b78e75
+        # but were removed 2026-11-18 -- AX6000 hardware has no USB port.
+        for pkg in luci-app-autoreboot luci-app-totp luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn cloudflared; do
           grep -q "^CONFIG_PACKAGE_${pkg}=y" .config || { echo "ERROR: CONFIG_PACKAGE_${pkg} dropped by defconfig"; exit 1; }
         done
         grep -q "^CONFIG_LUCI_LANG_zh_Hans=y" .config || { echo "ERROR: CONFIG_LUCI_LANG_zh_Hans dropped by defconfig"; exit 1; }
