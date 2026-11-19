@@ -125,16 +125,9 @@ Firmware_Diy() {
 	fi
 	cp -a /tmp/openclash-src/luci-app-openclash package/luci-app-openclash
 
-	# Lucky UI + binary package (both dirs in the same pinned repo)
-	git clone https://github.com/gdy666/luci-app-lucky /tmp/lucky-src
-	git -C /tmp/lucky-src checkout 91b506627c1d81fa323816e3aeafcbde493d03a9
-	cp -a /tmp/lucky-src/luci-app-lucky package/luci-app-lucky
-	# luci-app-lucky declares +lucky, but only the UI dir was copied --
-	# run 9 died at package/install on `lucky (no such package)`. The
-	# sibling `lucky` binary package lives in the same pinned repo
-	# (prebuilt release tarball, no build work); copy it too. Same
-	# class of gap as run 9's dae/ sibling.
-	cp -a /tmp/lucky-src/lucky package/lucky
+	# Lucky REMOVED 2026-11-19 (user decision, to make room for the
+	# OpenClash Meta core): do not clone luci-app-lucky / lucky here.
+	# Config no longer selects CONFIG_PACKAGE_lucky / luci-app-lucky.
 
 	# Disk manager (Lua + luci-compat, which exists in the 25.12 luci feed)
 	git clone https://github.com/lisaac/luci-app-diskman /tmp/diskman-src
@@ -212,15 +205,9 @@ Firmware_Diy() {
 	echo '$(eval $(call BuildPackage,$(PKG_NAME)))' >> package/luci-app-autoreboot/Makefile
 	grep -q 'call BuildPackage' package/luci-app-autoreboot/Makefile || { echo "ERROR: autoreboot BuildPackage line did not apply"; exit 1; }
 
-	# cloudflared 2026.10.7 -> 2026.11.1 (upstream release 2026-11-17;
-	# feed still at 2026.10.7 as of 2026-11-18). Bump the feed Makefile
-	# in place; the feed's Go is 1.27.4 which satisfies go.mod's
-	# `go 1.27.4`, so no toolchain change is needed. Remove this block
-	# once the feed passes 2026.11.1. Fail fast if the sed does not match.
-	sed -i 's/^PKG_VERSION:=.*/PKG_VERSION:=2026.11.1/' feeds/packages/net/cloudflared/Makefile
-	sed -i 's/^PKG_HASH:=.*/PKG_HASH:=d72ba7465d392a7c82be85e9417c0c923aa69e7c6dbc9baaeb42bb49a8f0572d/' feeds/packages/net/cloudflared/Makefile
-	grep -q "^PKG_VERSION:=2026.11.1" feeds/packages/net/cloudflared/Makefile || { echo "ERROR: cloudflared version bump did not apply"; exit 1; }
-	grep -q "^PKG_HASH:=d72ba7465d392a7c82be85e9417c0c923aa69e7c6dbc9baaeb42bb49a8f0572d" feeds/packages/net/cloudflared/Makefile || { echo "ERROR: cloudflared hash bump did not apply"; exit 1; }
+	# cloudflared REMOVED 2026-11-19 (user decision, to make room for
+	# the OpenClash Meta core): no version bump; Config no longer
+	# selects CONFIG_PACKAGE_cloudflared.
 
 	# Mount Points menu entry (2026-11-19, mounts-fix): this build
 	# deletes block-mount (AX6000 has no USB port), so /sbin/block is
@@ -290,4 +277,35 @@ PYEOF
 	grep -q "zonename='Asia/Shanghai'" files/etc/uci-defaults/99-set-timezone || { echo "ERROR: timezone script missing Asia/Shanghai"; exit 1; }
 	grep -q "uci commit system" files/etc/uci-defaults/99-set-timezone || { echo "ERROR: timezone script missing uci commit"; exit 1; }
 	echo "LED/timezone overlay check OK: 4 files in tree files/, scripts executable, content verified"
+
+	# OpenClash Meta core (2026-11-19, user decision): bake the mihomo
+	# binary into the image so OpenClash works out of the box (the core
+	# was missing; 5.1M overlay could never hold it). Downloaded here
+	# at build time (pinned release, hash-verified) into the tree
+	# files/ overlay at the path OpenClash expects
+	# (/etc/openclash/core/clash_meta, per luci-app-openclash
+	# openclash_core.sh: meta_core_path). Source: MetaCubeX/mihomo
+	# v1.19.34 linux-arm64. The binary is NOT vendored in the repo
+	# (57M is too large for the git-data API push; it is fetched here
+	# like the other externals). Fail fast if the download, the .gz
+	# hash, the size, the arch, or the binary hash does not match.
+	# Space: Lucky (~14M, incompressible) + cloudflared (~25M) removed
+	# frees ~39M uncompressed; mihomo is 57,344,126 B uncompressed but
+	# xz-compresses to ~13.7M, so the squashfs SHRINKS ~7M and fits
+	# the 70.6M rootfs UBI volume with room to spare.
+	mkdir -p files/etc/openclash/core
+	MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/v1.19.34/mihomo-linux-arm64-v1.19.34.gz"
+	MIHOMO_GZ_SHA256="daaf78a6240a282cdfd75bcbf98fe321f6bd52765cc29e79f344191198f0b50f"
+	curl -fsSL -o mihomo-linux-arm64-v1.19.34.gz "$MIHOMO_URL" || { echo "ERROR: mihomo download failed"; exit 1; }
+	echo "$MIHOMO_GZ_SHA256  mihomo-linux-arm64-v1.19.34.gz" | sha256sum -c - || { echo "ERROR: mihomo .gz SHA256 mismatch"; exit 1; }
+	gzip -dc mihomo-linux-arm64-v1.19.34.gz > files/etc/openclash/core/clash_meta || { echo "ERROR: mihomo gunzip failed"; exit 1; }
+	chmod 755 files/etc/openclash/core/clash_meta
+	rm -f mihomo-linux-arm64-v1.19.34.gz
+	[ -f files/etc/openclash/core/clash_meta ] || { echo "ERROR: clash_meta missing from tree files/"; exit 1; }
+	[ -x files/etc/openclash/core/clash_meta ] || { echo "ERROR: clash_meta not executable in tree files/"; exit 1; }
+	[ "$(wc -c < files/etc/openclash/core/clash_meta)" -eq 57344126 ] || { echo "ERROR: clash_meta size changed (expected 57344126)"; exit 1; }
+	echo "022da41e03ce70641a2f50c485b4f69ade8f1c7aeeece2cf1ec45c614a029441  files/etc/openclash/core/clash_meta" | sha256sum -c - || { echo "ERROR: clash_meta SHA256 mismatch"; exit 1; }
+	file files/etc/openclash/core/clash_meta | grep -q "ARM aarch64" || { echo "ERROR: clash_meta is not ARM aarch64 ELF"; exit 1; }
+	file files/etc/openclash/core/clash_meta | grep -q "ELF 64-bit" || { echo "ERROR: clash_meta is not 64-bit ELF"; exit 1; }
+	echo "Meta core check OK: clash_meta 57344126 B, aarch64 ELF, SHA256 verified"
 }

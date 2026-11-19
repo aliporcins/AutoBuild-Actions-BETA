@@ -320,7 +320,10 @@ jobs:
         # missing a promised feature.
         # NOTE: kmod-usb-storage/block-mount were in this list in 2b78e75
         # but were removed 2026-11-18 -- AX6000 hardware has no USB port.
-        for pkg in luci-app-autoreboot luci-app-totp luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn cloudflared; do
+        # NOTE: cloudflared was in this list in 2b78e75 but was removed
+        # 2026-11-19 -- user removed cloudflared from the build (room
+        # for the OpenClash Meta core), so it must not be required here.
+        for pkg in luci-app-autoreboot luci-app-totp luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn; do
           grep -q "^CONFIG_PACKAGE_${pkg}=y" .config || { echo "ERROR: CONFIG_PACKAGE_${pkg} dropped by defconfig"; exit 1; }
         done
         grep -q "^CONFIG_LUCI_LANG_zh_Hans=y" .config || { echo "ERROR: CONFIG_LUCI_LANG_zh_Hans dropped by defconfig"; exit 1; }
