@@ -19,6 +19,10 @@ on:
   ## 定时触发编译(不要删除此行注释)
   #schedule:
   #  - cron: 0 8 * * 5
+
+  ## 定时暖缓存：每 5 天取存一次 ccache，防 GitHub 缓存 7 天过期（只跑 WarmCache job；Compile job 另有 if 挡住定时触发，不会误触完整构建）
+  schedule:
+    - cron: '0 2 */5 * *'
   
   ## 重新点亮 Star 时触发编译(不要删除此行注释)
   #watch:
@@ -77,7 +81,21 @@ env:
 ### 请按需求修改以上内容
 
 jobs:
+  WarmCache:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-22.04
+
+    steps:
+
+    - name: Cache ccache (warm; keep 7-day clock alive)
+      uses: actions/cache@v4
+      with:
+        path: ~/.ccache
+        key: ccache-openwrt-25.12-x86_64
+        save-always: true
+
   Compile:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-22.04
 
     steps:
