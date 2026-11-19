@@ -2,7 +2,9 @@
 # AutoBuild Module by Hyy2001 <https://github.com/Hyy2001X/AutoBuild-Actions-BETA>
 # AutoBuild DiyScript -- adapted for aliporcins/AutoBuild-Actions-BETA:
 # builds official openwrt-25.12 for x86_64 with the production VM100 package set.
-# No credentials are baked into the image; default address stays 192.168.1.1.
+# No credentials are baked into the image; default address is 192.168.2.1
+# (user decision 2026-11-20, main-router rebuild: the production LAN
+# address is now baked in so a fresh flash comes up at 192.168.2.1).
 
 Firmware_Diy_Core() {
 
@@ -15,8 +17,10 @@ Firmware_Diy_Core() {
 	Default_Flag=AUTO
 	# 固件标签 (名称后缀), 适用不同配置文件, AUTO: [自动识别]
 
-	Default_IP="192.168.1.1"
-	# 固件 IP 地址 (upstream default; production 192.168.2.1 is NEVER baked in)
+	Default_IP="192.168.2.1"
+	# 固件 IP 地址 (user decision 2026-11-20: production 192.168.2.1 is
+	# now baked in; both x86_64 and AX6000 builds use it as the default.
+	# A workflow Tempoary_IP input still overrides this when supplied.)
 
 	Default_Title="Powered by AutoBuild-Actions"
 	# 固件终端首页显示的额外信息
@@ -123,9 +127,11 @@ Firmware_Diy() {
 	fi
 	cp -a /tmp/openclash-src/luci-app-openclash package/luci-app-openclash
 
-	# Lucky REMOVED 2026-11-19 (user decision, to make room for the
-	# OpenClash Meta core): do not clone luci-app-lucky / lucky here.
-	# Config no longer selects CONFIG_PACKAGE_lucky / luci-app-lucky.
+	# Lucky: NOT cloned here. It was removed from the AX6000 (NSS)
+	# config 2026-11-19 (user decision, to make room for the
+	# OpenClash Meta core). Configs/x86_64 (main router) still
+	# selects CONFIG_PACKAGE_lucky / luci-app-lucky per user decision
+	# 2026-11-20 (kept as-is); the packages come from the feeds.
 
 	# Disk manager (Lua + luci-compat, which exists in the 25.12 luci feed)
 	git clone https://github.com/lisaac/luci-app-diskman /tmp/diskman-src
@@ -213,19 +219,34 @@ Firmware_Diy() {
 	sed -i 's/_("Scheduled Reboot")/_("定时重启")/' package/luci-app-autoreboot/luasrc/controller/autoreboot.lua
 	grep -q '_("定时重启")' package/luci-app-autoreboot/luasrc/controller/autoreboot.lua || { echo "ERROR: autoreboot menu name fix did not apply"; exit 1; }
 	if grep -q 'Scheduled Reboot' package/luci-app-autoreboot/luasrc/controller/autoreboot.lua; then echo "ERROR: autoreboot controller still contains Scheduled Reboot"; exit 1; fi
-	sed -i 's|MT7987A / OpenWrt 25.10 定时重启插件|小米 AX6000 定时重启插件|' package/luci-app-autoreboot/luasrc/model/cbi/autoreboot.lua
-	grep -q '小米 AX6000 定时重启插件' package/luci-app-autoreboot/luasrc/model/cbi/autoreboot.lua || { echo "ERROR: autoreboot description fix did not apply"; exit 1; }
+	# Description names the device: AX6000 (NSS fork) keeps its device
+	# name; x86_64 (main router) and other targets get generic text
+	# with no wrong hardware/branch name. The menu-name fix above
+	# ("定时重启") is generic and applies to all targets.
+	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
+		sed -i 's|MT7987A / OpenWrt 25.10 定时重启插件|小米 AX6000 定时重启插件|' package/luci-app-autoreboot/luasrc/model/cbi/autoreboot.lua
+		grep -q '小米 AX6000 定时重启插件' package/luci-app-autoreboot/luasrc/model/cbi/autoreboot.lua || { echo "ERROR: autoreboot description fix did not apply"; exit 1; }
+	else
+		sed -i 's|MT7987A / OpenWrt 25.10 定时重启插件|定时重启插件|' package/luci-app-autoreboot/luasrc/model/cbi/autoreboot.lua
+		grep -q '定时重启插件' package/luci-app-autoreboot/luasrc/model/cbi/autoreboot.lua || { echo "ERROR: autoreboot description fix did not apply"; exit 1; }
+	fi
 	if grep -q 'MT7987A' package/luci-app-autoreboot/luasrc/model/cbi/autoreboot.lua; then echo "ERROR: autoreboot CBI still contains MT7987A"; exit 1; fi
 
-	# cloudflared REMOVED 2026-11-19 (user decision, to make room for
-	# the OpenClash Meta core): no version bump; Config no longer
-	# selects CONFIG_PACKAGE_cloudflared.
+	# cloudflared: NOT cloned here (it comes from the feeds). It was
+	# removed from the AX6000 (NSS) config 2026-11-19 (user decision,
+	# to make room for the OpenClash Meta core). Configs/x86_64 (main
+	# router) still selects CONFIG_PACKAGE_cloudflared per user
+	# decision 2026-11-20 (kept as-is).
 
 	# Mount Points + Plugins menu entries (2026-11-19, mounts-fix +
-	# plugins-hide, user decision): this build deletes block-mount
-	# (AX6000 has no USB port), so /sbin/block is gone and the LuCI
-	# Mount Points page (admin/system/mounts) fails when opened; and
-	# the Plugins page (admin/system/plugins) is unused clutter.
+	# plugins-hide, user decision) -- AX6000 (qualcommax) ONLY.
+	# This build deletes block-mount (AX6000 has no USB port), so
+	# /sbin/block is gone and the LuCI Mount Points page
+	# (admin/system/mounts) fails when opened; and the Plugins page
+	# (admin/system/plugins) is unused clutter. x86_64 (main router)
+	# HAS USB + block-mount, so Mount Points stays and the Plugins
+	# page is left alone; the 25.12 feed menu entry count also
+	# differs from the NSS 15, so the check below would fail there.
 	# Hide both menu entries via the standard buildroot files/
 	# overlay (same role as ImageBuilder FILES= for the AX3000T
 	# oc48007 fix): files/ is copied into the target rootfs after
@@ -236,6 +257,7 @@ Firmware_Diy() {
 	# file, the 24.10 menu lacks the pwpolicy entry the NSS menu has.
 	# Fail fast if the feed file drifts (upstream restructuring must
 	# abort here, not ship a stale menu).
+	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
 	mkdir -p files/usr/share/luci/menu.d
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/usr/share/luci/menu.d/luci-mod-system.json" files/usr/share/luci/menu.d/luci-mod-system.json
 	[ -f files/usr/share/luci/menu.d/luci-mod-system.json ] || { echo "ERROR: mounts menu overlay missing from tree files/"; exit 1; }
@@ -258,17 +280,22 @@ blob = open(overlay_path, 'rb').read()
 assert b'mounts' not in blob and b'/sbin/block' not in blob and b'plugins' not in blob, 'overlay still mentions mounts, plugins or /sbin/block'
 print('menu overlay check OK: feed 15 entries -> overlay 13, mounts + plugins + /sbin/block gone')
 PYEOF
+	fi # end AX6000-only menu overlay
 
-	# LED night-off timer + default timezone (2026-11-19, user request):
-	# bake the LED scripts/crontab and a first-boot timezone script
-	# into the image via the standard buildroot files/ overlay (same
-	# mechanism as the mounts menu fix above). files/ is copied into
-	# the target rootfs after package files. No credentials here: the
-	# LED scripts only write LED brightness nodes, the crontab only
-	# schedules them, and the uci-defaults script only sets
-	# timezone/zonename (hostname and LAN IP are set by config_generate
-	# from the build inputs and are NOT touched).
+	# LED night-off timer + default timezone (2026-11-19, user request)
+	# -- AX6000 (qualcommax) ONLY. Bake the LED scripts/crontab and a
+	# first-boot timezone script into the image via the standard
+	# buildroot files/ overlay (same mechanism as the mounts menu fix
+	# above). files/ is copied into the target rootfs after package
+	# files. No credentials here: the LED scripts only write LED
+	# brightness nodes, the crontab only schedules them, and the
+	# uci-defaults script only sets timezone/zonename (hostname and
+	# LAN IP are set by config_generate from the build inputs and are
+	# NOT touched). x86_64 (main router) has no such LED nodes and its
+	# timezone is already set via config, so this whole block is
+	# skipped there to keep the image identical to the current one.
 	# Fail fast if any vendored file is missing or its content drifts.
+	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
 	mkdir -p files/root files/etc/crontabs files/etc/uci-defaults
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/root/led-night.sh" files/root/led-night.sh
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/root/led-day.sh" files/root/led-day.sh
@@ -292,22 +319,29 @@ PYEOF
 	grep -q "zonename='Asia/Shanghai'" files/etc/uci-defaults/99-set-timezone || { echo "ERROR: timezone script missing Asia/Shanghai"; exit 1; }
 	grep -q "uci commit system" files/etc/uci-defaults/99-set-timezone || { echo "ERROR: timezone script missing uci commit"; exit 1; }
 	echo "LED/timezone overlay check OK: 4 files in tree files/, scripts executable, content verified"
+	fi # end AX6000-only LED/timezone overlay
 
-	# OpenClash Meta core (2026-11-19, user decision): bake the mihomo
-	# binary into the image so OpenClash works out of the box (the core
-	# was missing; 5.1M overlay could never hold it). Downloaded here
-	# at build time (pinned release, hash-verified) into the tree
-	# files/ overlay at the path OpenClash expects
-	# (/etc/openclash/core/clash_meta, per luci-app-openclash
-	# openclash_core.sh: meta_core_path). Source: MetaCubeX/mihomo
-	# v1.19.34 linux-arm64. The binary is NOT vendored in the repo
-	# (57M is too large for the git-data API push; it is fetched here
-	# like the other externals). Fail fast if the download, the .gz
-	# hash, the size, the arch, or the binary hash does not match.
-	# Space: Lucky (~14M, incompressible) + cloudflared (~25M) removed
-	# frees ~39M uncompressed; mihomo is 57,344,126 B uncompressed but
+	# OpenClash Meta core (2026-11-19, user decision) -- AX6000
+	# (qualcommax) ONLY: bake the mihomo binary into the image so
+	# OpenClash works out of the box (the core was missing; 5.1M
+	# overlay could never hold it). Downloaded here at build time
+	# (pinned release, hash-verified) into the tree files/ overlay
+	# at the path OpenClash expects (/etc/openclash/core/clash_meta,
+	# per luci-app-openclash openclash_core.sh: meta_core_path).
+	# Source: MetaCubeX/mihomo v1.19.34 linux-arm64. The binary is
+	# NOT vendored in the repo (57M is too large for the git-data API
+	# push; it is fetched here like the other externals). Fail fast
+	# if the download, the .gz hash, the size, the arch, or the
+	# binary hash does not match. Space: Lucky (~14M,
+	# incompressible) + cloudflared (~25M) removed frees ~39M
+	# uncompressed; mihomo is 57,344,126 B uncompressed but
 	# xz-compresses to ~13.7M, so the squashfs SHRINKS ~7M and fits
 	# the 70.6M rootfs UBI volume with room to spare.
+	# x86_64 (main router) is amd64, NOT arm64: the arm64 binary
+	# cannot run there. Skip this block on x86_64; OpenClash keeps
+	# its previous behavior of downloading the correct-arch core on
+	# first run (as the current production firmware does).
+	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
 	mkdir -p files/etc/openclash/core
 	MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/v1.19.34/mihomo-linux-arm64-v1.19.34.gz"
 	MIHOMO_GZ_SHA256="daaf78a6240a282cdfd75bcbf98fe321f6bd52765cc29e79f344191198f0b50f"
@@ -323,4 +357,5 @@ PYEOF
 	file files/etc/openclash/core/clash_meta | grep -q "ARM aarch64" || { echo "ERROR: clash_meta is not ARM aarch64 ELF"; exit 1; }
 	file files/etc/openclash/core/clash_meta | grep -q "ELF 64-bit" || { echo "ERROR: clash_meta is not 64-bit ELF"; exit 1; }
 	echo "Meta core check OK: clash_meta 57344126 B, aarch64 ELF, SHA256 verified"
+	fi # end AX6000-only mihomo arm64 core
 }
