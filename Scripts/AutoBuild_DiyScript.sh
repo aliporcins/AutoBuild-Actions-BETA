@@ -221,4 +221,39 @@ Firmware_Diy() {
 	sed -i 's/^PKG_HASH:=.*/PKG_HASH:=d72ba7465d392a7c82be85e9417c0c923aa69e7c6dbc9baaeb42bb49a8f0572d/' feeds/packages/net/cloudflared/Makefile
 	grep -q "^PKG_VERSION:=2026.11.1" feeds/packages/net/cloudflared/Makefile || { echo "ERROR: cloudflared version bump did not apply"; exit 1; }
 	grep -q "^PKG_HASH:=d72ba7465d392a7c82be85e9417c0c923aa69e7c6dbc9baaeb42bb49a8f0572d" feeds/packages/net/cloudflared/Makefile || { echo "ERROR: cloudflared hash bump did not apply"; exit 1; }
+
+	# Mount Points menu entry (2026-11-19, mounts-fix): this build
+	# deletes block-mount (AX6000 has no USB port), so /sbin/block is
+	# gone and the LuCI Mount Points page (admin/system/mounts) fails
+	# when opened. Hide the menu entry via the standard buildroot
+	# files/ overlay (same role as ImageBuilder FILES= for the
+	# AX3000T oc48007 fix): files/ is copied into the target rootfs
+	# after package files, so it overrides luci-mod-system's menu
+	# JSON. The overlay is vendored at Files-ax6000/ and derived from
+	# the NSS tree's own menu file (15 entries) by deleting ONLY the
+	# mounts block -- do NOT reuse the AX3000T 12-entry file, the
+	# 24.10 menu lacks the pwpolicy/plugins entries the NSS menu has.
+	# Fail fast if the feed file drifts (upstream restructuring must
+	# abort here, not ship a stale menu).
+	mkdir -p files/usr/share/luci/menu.d
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/usr/share/luci/menu.d/luci-mod-system.json" files/usr/share/luci/menu.d/luci-mod-system.json
+	[ -f files/usr/share/luci/menu.d/luci-mod-system.json ] || { echo "ERROR: mounts menu overlay missing from tree files/"; exit 1; }
+	FEED_MENU=$(find feeds -path '*luci-mod-system*menu.d/luci-mod-system.json' -type f 2>/dev/null)
+	[ "$(printf '%s' "$FEED_MENU" | grep -c .)" -eq 1 ] || { echo "ERROR: expected exactly 1 luci-mod-system menu file under feeds, got: $FEED_MENU"; exit 1; }
+	python3 - "$FEED_MENU" files/usr/share/luci/menu.d/luci-mod-system.json <<'PYEOF'
+import json, sys
+feed_path, overlay_path = sys.argv[1], sys.argv[2]
+with open(feed_path) as f:
+    feed = json.load(f)
+with open(overlay_path) as f:
+    overlay = json.load(f)
+assert 'admin/system/mounts' in feed, 'feed menu has no mounts entry (upstream changed?)'
+assert len(feed) == 15, 'feed menu entry count changed: %d (expected 15)' % len(feed)
+expected = {k: v for k, v in feed.items() if k != 'admin/system/mounts'}
+assert overlay == expected, 'overlay is not exactly feed-minus-mounts (upstream drift?)'
+assert len(overlay) == 14, 'overlay entry count: %d (expected 14)' % len(overlay)
+blob = open(overlay_path, 'rb').read()
+assert b'mounts' not in blob and b'/sbin/block' not in blob, 'overlay still mentions mounts or /sbin/block'
+print('menu overlay check OK: feed 15 entries -> overlay 14, mounts + /sbin/block gone')
+PYEOF
 }

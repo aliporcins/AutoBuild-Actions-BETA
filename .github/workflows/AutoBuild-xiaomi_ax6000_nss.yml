@@ -387,6 +387,23 @@ jobs:
         done
         echo "POST-BUILD GATE OK: autoreboot apk contains all 4 files"
 
+        # WARN-ONLY (2026-11-19, mounts-fix): the files/ overlay must
+        # have reached the assembled rootfs. Check the TARGET_DIR copy
+        # (build_dir/target-*/root-*/...), NOT a package .pkgdir copy
+        # (which never sees the overlay). Warn only -- this check has
+        # never run on real artifacts; it becomes blocking only after
+        # one run proves it passes on a good build. The post-build
+        # deep-verify report is the real proof either way.
+        echo "=== WARN-ONLY: mounts menu overlay in rootfs ==="
+        ROOT_MENU=$(find build_dir -path '*/root-*/usr/share/luci/menu.d/luci-mod-system.json' -type f 2>/dev/null | head -n1)
+        if [ -z "$ROOT_MENU" ]; then
+          echo "WARN: no rootfs menu JSON found under build_dir (overlay reach unverified -- see deep-verify report)"
+        elif grep -q "mounts\|/sbin/block" "$ROOT_MENU"; then
+          echo "WARN: rootfs menu JSON still contains mounts or /sbin/block ($ROOT_MENU) -- overlay did not apply"
+        else
+          echo "WARN-ONLY OK: rootfs menu JSON has no mounts entry ($ROOT_MENU)"
+        fi
+
     - name: Checkout Firmware
       if: steps.compile.outcome == 'success' && !cancelled()
       run: |
