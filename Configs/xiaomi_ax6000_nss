@@ -38,10 +38,10 @@ CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
 CONFIG_PACKAGE_luci-compat=y
 CONFIG_PACKAGE_kmod-tun=y
 
-# WireGuard trio
-CONFIG_PACKAGE_kmod-wireguard=y
-CONFIG_PACKAGE_luci-proto-wireguard=y
-CONFIG_PACKAGE_wireguard-tools=y
+# WireGuard removed 2026-11-19 (user decision: not wanted on AX6000).
+# CONFIG_PACKAGE_kmod-wireguard is not set
+# CONFIG_PACKAGE_luci-proto-wireguard is not set
+# CONFIG_PACKAGE_wireguard-tools is not set
 
 # Scheduler kmods for dae traffic control: NET_SCH_INGRESS / NET_CLS_BPF /
 # NET_CLS_ACT are provided by these (daed's DEPENDS pulls them in too, but
