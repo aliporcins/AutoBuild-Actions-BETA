@@ -60,7 +60,9 @@ CONFIG_PACKAGE_luci-app-lucky=y
 CONFIG_PACKAGE_lucky=y
 CONFIG_PACKAGE_luci-app-diskman=y
 CONFIG_PACKAGE_luci-app-ramfree=y
-CONFIG_PACKAGE_luci-app-ota=y
+# luci-app-ota REMOVED 2026-11-20 (user decision, main-router rebuild):
+# the package was deleted from the live router (apk del 2026-11-19) and
+# must not be built into the new image; its /etc/config/ota is orphaned.
 CONFIG_PACKAGE_luci-app-autoreboot=y
 
 # Vendored in this repo under package/ (user's own package, read-only upstream)
