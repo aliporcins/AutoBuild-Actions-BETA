@@ -1,0 +1,2 @@
+0 22 * * * /root/led-night.sh
+0 7 * * * /root/led-day.sh

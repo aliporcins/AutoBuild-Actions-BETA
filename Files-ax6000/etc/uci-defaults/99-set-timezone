@@ -1,0 +1,9 @@
+#!/bin/sh
+# Set default timezone to Asia/Shanghai (CST-8) on first boot.
+# Firmware defaulted to UTC; every flash needed a manual fix (2026-11-19).
+# Only touches timezone/zonename -- hostname and LAN IP are set by
+# config_generate from the build inputs and are NOT touched here.
+uci set system.@system[0].timezone='CST-8'
+uci set system.@system[0].zonename='Asia/Shanghai'
+uci commit system
+exit 0

@@ -256,4 +256,38 @@ blob = open(overlay_path, 'rb').read()
 assert b'mounts' not in blob and b'/sbin/block' not in blob, 'overlay still mentions mounts or /sbin/block'
 print('menu overlay check OK: feed 15 entries -> overlay 14, mounts + /sbin/block gone')
 PYEOF
+
+	# LED night-off timer + default timezone (2026-11-19, user request):
+	# bake the LED scripts/crontab and a first-boot timezone script
+	# into the image via the standard buildroot files/ overlay (same
+	# mechanism as the mounts menu fix above). files/ is copied into
+	# the target rootfs after package files. No credentials here: the
+	# LED scripts only write LED brightness nodes, the crontab only
+	# schedules them, and the uci-defaults script only sets
+	# timezone/zonename (hostname and LAN IP are set by config_generate
+	# from the build inputs and are NOT touched).
+	# Fail fast if any vendored file is missing or its content drifts.
+	mkdir -p files/root files/etc/crontabs files/etc/uci-defaults
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/root/led-night.sh" files/root/led-night.sh
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/root/led-day.sh" files/root/led-day.sh
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/crontabs/root" files/etc/crontabs/root
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/uci-defaults/99-set-timezone" files/etc/uci-defaults/99-set-timezone
+	chmod 755 files/root/led-night.sh files/root/led-day.sh files/etc/uci-defaults/99-set-timezone
+	for f in root/led-night.sh root/led-day.sh etc/crontabs/root etc/uci-defaults/99-set-timezone; do
+		[ -f "files/$f" ] || { echo "ERROR: LED/timezone overlay missing from tree files/: $f"; exit 1; }
+	done
+	[ -x files/root/led-night.sh ] || { echo "ERROR: led-night.sh not executable in tree files/"; exit 1; }
+	[ -x files/root/led-day.sh ] || { echo "ERROR: led-day.sh not executable in tree files/"; exit 1; }
+	[ -x files/etc/uci-defaults/99-set-timezone ] || { echo "ERROR: 99-set-timezone not executable in tree files/"; exit 1; }
+	[ "$(wc -l < files/root/led-night.sh)" -eq 7 ] || { echo "ERROR: led-night.sh line count changed (expected 7)"; exit 1; }
+	[ "$(wc -l < files/root/led-day.sh)" -eq 2 ] || { echo "ERROR: led-day.sh line count changed (expected 2)"; exit 1; }
+	[ "$(wc -l < files/etc/crontabs/root)" -eq 2 ] || { echo "ERROR: crontab line count changed (expected 2)"; exit 1; }
+	grep -Fq "0 22 * * * /root/led-night.sh" files/etc/crontabs/root || { echo "ERROR: crontab missing 22:00 night line"; exit 1; }
+	grep -Fq "0 7 * * * /root/led-day.sh" files/etc/crontabs/root || { echo "ERROR: crontab missing 07:00 day line"; exit 1; }
+	grep -q "blue:power" files/root/led-night.sh || { echo "ERROR: led-night.sh missing blue:power"; exit 1; }
+	grep -q "blue:power" files/root/led-day.sh || { echo "ERROR: led-day.sh missing blue:power"; exit 1; }
+	grep -q "timezone='CST-8'" files/etc/uci-defaults/99-set-timezone || { echo "ERROR: timezone script missing CST-8"; exit 1; }
+	grep -q "zonename='Asia/Shanghai'" files/etc/uci-defaults/99-set-timezone || { echo "ERROR: timezone script missing Asia/Shanghai"; exit 1; }
+	grep -q "uci commit system" files/etc/uci-defaults/99-set-timezone || { echo "ERROR: timezone script missing uci commit"; exit 1; }
+	echo "LED/timezone overlay check OK: 4 files in tree files/, scripts executable, content verified"
 }
