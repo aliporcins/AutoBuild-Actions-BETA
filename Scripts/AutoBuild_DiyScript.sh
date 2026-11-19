@@ -201,21 +201,39 @@ Firmware_Diy() {
 	echo '$(eval $(call BuildPackage,$(PKG_NAME)))' >> package/luci-app-autoreboot/Makefile
 	grep -q 'call BuildPackage' package/luci-app-autoreboot/Makefile || { echo "ERROR: autoreboot BuildPackage line did not apply"; exit 1; }
 
+	# Scheduled reboot UI text (2026-11-19, user decision): upstream
+	# Wenjw28's menu name is English ("Scheduled Reboot") so the
+	# browser tab shows English, and its description names the wrong
+	# hardware/branch ("MT7987A / OpenWrt 25.10") -- AX6000 is IPQ5018
+	# and this firmware is the NSS fork, not 25.10. Fix both strings
+	# in the vendored sources (controller menu name, CBI description);
+	# the CBI page body itself is already Chinese and is untouched.
+	# Fail fast if either sed does not match (upstream rewording must
+	# not silently ship the wrong text again).
+	sed -i 's/_("Scheduled Reboot")/_("定时重启")/' package/luci-app-autoreboot/luasrc/controller/autoreboot.lua
+	grep -q '_("定时重启")' package/luci-app-autoreboot/luasrc/controller/autoreboot.lua || { echo "ERROR: autoreboot menu name fix did not apply"; exit 1; }
+	if grep -q 'Scheduled Reboot' package/luci-app-autoreboot/luasrc/controller/autoreboot.lua; then echo "ERROR: autoreboot controller still contains Scheduled Reboot"; exit 1; fi
+	sed -i 's|MT7987A / OpenWrt 25.10 定时重启插件|小米 AX6000 定时重启插件|' package/luci-app-autoreboot/luasrc/model/cbi/autoreboot.lua
+	grep -q '小米 AX6000 定时重启插件' package/luci-app-autoreboot/luasrc/model/cbi/autoreboot.lua || { echo "ERROR: autoreboot description fix did not apply"; exit 1; }
+	if grep -q 'MT7987A' package/luci-app-autoreboot/luasrc/model/cbi/autoreboot.lua; then echo "ERROR: autoreboot CBI still contains MT7987A"; exit 1; fi
+
 	# cloudflared REMOVED 2026-11-19 (user decision, to make room for
 	# the OpenClash Meta core): no version bump; Config no longer
 	# selects CONFIG_PACKAGE_cloudflared.
 
-	# Mount Points menu entry (2026-11-19, mounts-fix): this build
-	# deletes block-mount (AX6000 has no USB port), so /sbin/block is
-	# gone and the LuCI Mount Points page (admin/system/mounts) fails
-	# when opened. Hide the menu entry via the standard buildroot
-	# files/ overlay (same role as ImageBuilder FILES= for the
-	# AX3000T oc48007 fix): files/ is copied into the target rootfs
-	# after package files, so it overrides luci-mod-system's menu
-	# JSON. The overlay is vendored at Files-ax6000/ and derived from
-	# the NSS tree's own menu file (15 entries) by deleting ONLY the
-	# mounts block -- do NOT reuse the AX3000T 12-entry file, the
-	# 24.10 menu lacks the pwpolicy/plugins entries the NSS menu has.
+	# Mount Points + Plugins menu entries (2026-11-19, mounts-fix +
+	# plugins-hide, user decision): this build deletes block-mount
+	# (AX6000 has no USB port), so /sbin/block is gone and the LuCI
+	# Mount Points page (admin/system/mounts) fails when opened; and
+	# the Plugins page (admin/system/plugins) is unused clutter.
+	# Hide both menu entries via the standard buildroot files/
+	# overlay (same role as ImageBuilder FILES= for the AX3000T
+	# oc48007 fix): files/ is copied into the target rootfs after
+	# package files, so it overrides luci-mod-system's menu JSON.
+	# The overlay is vendored at Files-ax6000/ and derived from the
+	# NSS tree's own menu file (15 entries) by deleting ONLY the
+	# mounts and plugins blocks -- do NOT reuse the AX3000T 12-entry
+	# file, the 24.10 menu lacks the pwpolicy entry the NSS menu has.
 	# Fail fast if the feed file drifts (upstream restructuring must
 	# abort here, not ship a stale menu).
 	mkdir -p files/usr/share/luci/menu.d
@@ -231,13 +249,14 @@ with open(feed_path) as f:
 with open(overlay_path) as f:
     overlay = json.load(f)
 assert 'admin/system/mounts' in feed, 'feed menu has no mounts entry (upstream changed?)'
+assert 'admin/system/plugins' in feed, 'feed menu has no plugins entry (upstream changed?)'
 assert len(feed) == 15, 'feed menu entry count changed: %d (expected 15)' % len(feed)
-expected = {k: v for k, v in feed.items() if k != 'admin/system/mounts'}
-assert overlay == expected, 'overlay is not exactly feed-minus-mounts (upstream drift?)'
-assert len(overlay) == 14, 'overlay entry count: %d (expected 14)' % len(overlay)
+expected = {k: v for k, v in feed.items() if k not in ('admin/system/mounts', 'admin/system/plugins')}
+assert overlay == expected, 'overlay is not exactly feed-minus-mounts-minus-plugins (upstream drift?)'
+assert len(overlay) == 13, 'overlay entry count: %d (expected 13)' % len(overlay)
 blob = open(overlay_path, 'rb').read()
-assert b'mounts' not in blob and b'/sbin/block' not in blob, 'overlay still mentions mounts or /sbin/block'
-print('menu overlay check OK: feed 15 entries -> overlay 14, mounts + /sbin/block gone')
+assert b'mounts' not in blob and b'/sbin/block' not in blob and b'plugins' not in blob, 'overlay still mentions mounts, plugins or /sbin/block'
+print('menu overlay check OK: feed 15 entries -> overlay 13, mounts + plugins + /sbin/block gone')
 PYEOF
 
 	# LED night-off timer + default timezone (2026-11-19, user request):
