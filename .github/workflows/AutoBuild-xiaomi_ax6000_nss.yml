@@ -308,7 +308,6 @@ jobs:
         echo "=== DIAG: defconfig outcome ==="
         grep -A4 'config PACKAGE_luci-app-autoreboot' tmp/.config-package.in || echo "DIAG: autoreboot symbol NOT in tmp/.config-package.in"
         grep "^CONFIG_PACKAGE_luci-app-autoreboot" .config || echo "DIAG: autoreboot NOT in .config after defconfig"
-        grep "^CONFIG_PACKAGE_luci-app-totp" .config || echo "DIAG: totp NOT in .config (control)"
         grep "^CONFIG_PACKAGE_luci-app-ramfree" .config || echo "DIAG: ramfree NOT in .config (control)"
         grep "^CONFIG_PACKAGE_luci-compat" .config || echo "DIAG: luci-compat NOT selected"
         grep "^CONFIG_PACKAGE_kmod-usb-storage" .config && echo "DIAG: usb-storage still selected (unexpected, AX6000 has no USB port)" || echo "DIAG: usb-storage absent as expected"
@@ -323,7 +322,10 @@ jobs:
         # NOTE: cloudflared was in this list in 2b78e75 but was removed
         # 2026-11-19 -- user removed cloudflared from the build (room
         # for the OpenClash Meta core), so it must not be required here.
-        for pkg in luci-app-autoreboot luci-app-totp luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn; do
+        # NOTE: luci-app-totp was in this list but was removed
+        # 2026-11-19 -- user removed TOTP from the build, so it
+        # must not be required here.
+        for pkg in luci-app-autoreboot luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn; do
           grep -q "^CONFIG_PACKAGE_${pkg}=y" .config || { echo "ERROR: CONFIG_PACKAGE_${pkg} dropped by defconfig"; exit 1; }
         done
         grep -q "^CONFIG_LUCI_LANG_zh_Hans=y" .config || { echo "ERROR: CONFIG_LUCI_LANG_zh_Hans dropped by defconfig"; exit 1; }

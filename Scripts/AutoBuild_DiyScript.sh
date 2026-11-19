@@ -60,14 +60,12 @@ Firmware_Diy() {
 
 	# External packages, ALL pinned to exact commits (core3 lesson: never float
 	# on a moving branch). Runs after feeds install, before make defconfig.
-	# package/luci-app-totp is vendored in this repo (user's own package);
-	# it needs no clone here -- BUT it does need copying into the tree:
-	# the repo's package/ dir is not the openwrt tree's package/ dir, and
-	# nothing else copies it, so make defconfig silently dropped
-	# CONFIG_PACKAGE_luci-app-totp and every NSS build so far shipped
-	# without TOTP (found 2026-11-18). Copy it like the other externals.
-	cp -a $GITHUB_WORKSPACE/package/luci-app-totp package/luci-app-totp
-	[ -d package/luci-app-totp ] || { echo "ERROR: vendored luci-app-totp missing from tree"; exit 1; }
+	# luci-app-totp REMOVED 2026-11-19 (user decision): the vendored
+	# package still sits in this repo under package/luci-app-totp/ but
+	# is no longer copied into the tree and no longer selected in
+	# Config, so it is not built. (It was never actually shipped in
+	# any NSS build -- defconfig silently dropped it before the copy
+	# step was added, found 2026-11-18.)
 
 	# Defensive: official 25.12 feeds ship no daed, but drop any feed copy
 	# if one ever appears, so the pinned kenzok8 copy is the only one.
@@ -139,10 +137,8 @@ Firmware_Diy() {
 	git -C /tmp/ramfree-src checkout 54dc42ded2e19f2f191b3ee54ac952f9d4acc8f4
 	cp -a /tmp/ramfree-src package/luci-app-ramfree
 
-	# OTA (JS, claims 25.12/apk support)
-	git clone https://github.com/MinimaxFlora/luci-app-ota /tmp/ota-src
-	git -C /tmp/ota-src checkout 5f66f5dc27bf9ec9d4666cc07f69d9b5ed1829d2
-	cp -a /tmp/ota-src package/luci-app-ota
+	# OTA REMOVED 2026-11-19 (user decision): no clone, no copy;
+	# Config no longer selects CONFIG_PACKAGE_luci-app-ota.
 
 	# Scheduled reboot UI (Lua; upstream has no luci-compat dep, add it
 	# fork-locally so it renders on ucode LuCI; its function is one cron
