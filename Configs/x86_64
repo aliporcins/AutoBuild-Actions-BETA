@@ -27,12 +27,50 @@ CONFIG_PACKAGE_kmod-virtio-pci=y
 CONFIG_BPF_TOOLCHAIN_HOST=y
 
 # Base: LuCI + Chinese packs + tun
+# (2026-11-20, next build: full i18n set for every installed LuCI app.
+# ROOT CAUSE of the r33393 English LuCI (verified by local defconfig
+# run 2026-11-20): a bare CONFIG_PACKAGE_luci-i18n-*-zh-cn=y is NOT
+# enough. Each i18n package defaults to LUCI_LANG_zh_Hans (luci.mk:
+# DEFAULT:=LUCI_LANG_zh_Hans||(ALL&&m)), and with LUCI_LANG_zh_Hans
+# unset defconfig resolves every i18n package to 'not set' -- the
+# seed lines are silently discarded. The fix is the master switch
+# CONFIG_LUCI_LANG_zh_Hans=y below; it drives ALL zh_Hans i18n
+# packages for selected apps. The explicit per-app lines are kept
+# as documentation/belt-and-suspenders. A defconfig gate is now in
+# the workflow (AutoBuild-x86_64.yml); if a pack is missing from the
+# next image, the gate log will say which one.
+# NOTE: luci-i18n-dhcp-zh-cn is deliberately NOT listed -- no such
+# package exists in 25.12 (luci-app-dhcp has no zh_Hans po; the DHCP
+# page is translated by luci-i18n-base-zh-cn). Listing it would make
+# the gate report a false missing every build.)
+CONFIG_LUCI_LANG_zh_Hans=y
 CONFIG_PACKAGE_luci=y
 CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
 CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
-CONFIG_PACKAGE_luci-i18n-dhcp-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-ddns-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-filemanager-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-nlbwmon-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-upnp-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-wol-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-cloudflared-zh-cn=y
+# luci-app-cloudflared: the app itself must be selected, otherwise its
+# i18n package's DEPENDS fails and the translation is dropped (the
+# daemon alone, CONFIG_PACKAGE_cloudflared, is not enough).
+CONFIG_PACKAGE_luci-app-cloudflared=y
 CONFIG_PACKAGE_luci-compat=y
 CONFIG_PACKAGE_kmod-tun=y
+
+# Traffic monitor (2026-11-20, user decision scheme B):
+# nlbwmon only (official feed). It counts via conntrack, so software
+# flow offloading does NOT affect it -- the live router already counts
+# correctly with offloading on (192.168.2.4: 17 MB down). wrtbwmon was
+# considered and REJECTED: it counts via iptables, which goes blind
+# under flow offloading, and its netdev rework is not worth it.
+# Flow offloading therefore stays ON; no firewall change.
+CONFIG_PACKAGE_nlbwmon=y
+CONFIG_PACKAGE_luci-app-nlbwmon=y
 
 # NEW: WireGuard trio
 CONFIG_PACKAGE_kmod-wireguard=y

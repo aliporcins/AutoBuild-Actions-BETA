@@ -280,6 +280,42 @@ jobs:
         cd openwrt
         ./scripts/feeds install -a
         make defconfig
+        # defconfig gate (2026-11-20): the r33393 build shipped 0
+        # luci-i18n packages although Configs/x86_64 had base/firewall/
+        # dhcp =y -- defconfig silently dropped them and nothing
+        # noticed until the user opened an English LuCI. This gate
+        # greps the FINAL .config for every package the next build
+        # must contain. First run: WARN ONLY (exit 0) so a gate bug
+        # cannot block a good build; the missing list is printed
+        # prominently in the log. Once confirmed working, flip
+        # GATE_FAIL to 1 to make it blocking.
+        # (2026-11-20 scheme B: wrtbwmon dropped -- nlbwmon only,
+        # flow offloading stays on, so no wrtbwmon/iptables deps here.)
+        GATE_FAIL=0
+        MISSING=""
+        for sym in \
+          luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
+          luci-i18n-ddns-zh-cn luci-i18n-filemanager-zh-cn luci-i18n-nlbwmon-zh-cn \
+          luci-i18n-package-manager-zh-cn luci-i18n-ttyd-zh-cn luci-i18n-upnp-zh-cn \
+          luci-i18n-wol-zh-cn luci-i18n-cloudflared-zh-cn \
+          nlbwmon luci-app-nlbwmon \
+          luci-app-totp daed luci-app-daede luci-app-lucky lucky \
+          luci-app-openclash luci-app-diskman luci-app-ramfree luci-app-autoreboot \
+          etherwake luci-app-wol cloudflared; do
+          if ! grep -q "^CONFIG_PACKAGE_${sym}=y" .config; then
+            MISSING="$MISSING $sym"
+          fi
+        done
+        if [ -n "$MISSING" ]; then
+          echo "================================================================"
+          echo "DEFCONFIG-GATE WARNING: the following required packages are MISSING from .config after defconfig (they will NOT be in the firmware):"
+          echo "  $MISSING"
+          echo "This gate is warn-only for now (GATE_FAIL=$GATE_FAIL). If these are genuinely dropped, the image will ship without them."
+          echo "================================================================"
+          if [ "$GATE_FAIL" = "1" ]; then echo "DEFCONFIG-GATE FAIL: blocking build"; exit 1; fi
+        else
+          echo "DEFCONFIG-GATE OK: all required packages present in .config"
+        fi
         make download -j$(nproc)
 
     - name: Build OpenWrt
