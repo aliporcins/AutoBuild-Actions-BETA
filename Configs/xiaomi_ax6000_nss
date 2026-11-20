@@ -60,6 +60,16 @@ CONFIG_PACKAGE_luci-app-ttyd=y
 CONFIG_PACKAGE_miniupnpd=y
 CONFIG_PACKAGE_luci-app-upnp=y
 CONFIG_PACKAGE_luci-app-filemanager=y
+# Traffic monitor (added 2026-11-20, user request; scheme B same as x86_64):
+# nlbwmon only (official feed). It counts via conntrack, so software
+# flow offloading does NOT affect it. wrtbwmon was considered and
+# REJECTED: it counts via iptables, which goes blind under flow
+# offloading. luci-lib-chartjs is the chart library luci-app-nlbwmon
+# renders with; luci-i18n-nlbwmon-zh-cn rides on the zh_Hans switch.
+CONFIG_PACKAGE_nlbwmon=y
+CONFIG_PACKAGE_luci-app-nlbwmon=y
+CONFIG_PACKAGE_luci-lib-chartjs=y
+CONFIG_PACKAGE_luci-i18n-nlbwmon-zh-cn=y
 # CONFIG_PACKAGE_cloudflared is not set (removed 2026-11-19, user decision: room for OpenClash Meta core)
 
 # mDNS responder (added 2026-11-18, user request: ax6000.local out of the box).
