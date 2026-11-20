@@ -317,17 +317,19 @@ PYEOF
 	fi # end AX6000-only menu overlay
 
 	# LED night-off timer + default timezone (2026-11-19, user request)
-	# -- AX6000 (qualcommax) ONLY. Bake the LED scripts/crontab and a
-	# first-boot timezone script into the image via the standard
-	# buildroot files/ overlay (same mechanism as the mounts menu fix
-	# above). files/ is copied into the target rootfs after package
-	# files. No credentials here: the LED scripts only write LED
-	# brightness nodes, the crontab only schedules them, and the
-	# uci-defaults script only sets timezone/zonename (hostname and
-	# LAN IP are set by config_generate from the build inputs and are
-	# NOT touched). x86_64 (main router) has no such LED nodes and its
-	# timezone is already set via config, so this whole block is
-	# skipped there to keep the image identical to the current one.
+	# -- AX6000 (qualcommax) ONLY. Bake the LED scripts/crontab and
+	# first-boot scripts into the image via the standard buildroot
+	# files/ overlay (same mechanism as the mounts menu fix above).
+	# files/ is copied into the target rootfs after package files.
+	# No credentials here: the LED scripts only write LED brightness
+	# nodes, the crontab only schedules them, 99-set-timezone only
+	# sets timezone/zonename, and 99-firstboot-init only applies the
+	# production LAN (192.168.2.209) + hostname + open WiFi when the
+	# LAN is still the build default (factory state); it exits without
+	# touching anything when settings were preserved. x86_64 (main
+	# router) has no such LED nodes and its timezone is already set
+	# via config, so this whole block is skipped there to keep the
+	# image identical to the current one.
 	# Fail fast if any vendored file is missing or its content drifts.
 	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
 	mkdir -p files/root files/etc/crontabs files/etc/uci-defaults
@@ -335,13 +337,15 @@ PYEOF
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/root/led-day.sh" files/root/led-day.sh
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/crontabs/root" files/etc/crontabs/root
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/uci-defaults/99-set-timezone" files/etc/uci-defaults/99-set-timezone
-	chmod 755 files/root/led-night.sh files/root/led-day.sh files/etc/uci-defaults/99-set-timezone
-	for f in root/led-night.sh root/led-day.sh etc/crontabs/root etc/uci-defaults/99-set-timezone; do
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/uci-defaults/99-firstboot-init" files/etc/uci-defaults/99-firstboot-init
+	chmod 755 files/root/led-night.sh files/root/led-day.sh files/etc/uci-defaults/99-set-timezone files/etc/uci-defaults/99-firstboot-init
+	for f in root/led-night.sh root/led-day.sh etc/crontabs/root etc/uci-defaults/99-set-timezone etc/uci-defaults/99-firstboot-init; do
 		[ -f "files/$f" ] || { echo "ERROR: LED/timezone overlay missing from tree files/: $f"; exit 1; }
 	done
 	[ -x files/root/led-night.sh ] || { echo "ERROR: led-night.sh not executable in tree files/"; exit 1; }
 	[ -x files/root/led-day.sh ] || { echo "ERROR: led-day.sh not executable in tree files/"; exit 1; }
 	[ -x files/etc/uci-defaults/99-set-timezone ] || { echo "ERROR: 99-set-timezone not executable in tree files/"; exit 1; }
+	[ -x files/etc/uci-defaults/99-firstboot-init ] || { echo "ERROR: 99-firstboot-init not executable in tree files/"; exit 1; }
 	[ "$(wc -l < files/root/led-night.sh)" -eq 7 ] || { echo "ERROR: led-night.sh line count changed (expected 7)"; exit 1; }
 	[ "$(wc -l < files/root/led-day.sh)" -eq 2 ] || { echo "ERROR: led-day.sh line count changed (expected 2)"; exit 1; }
 	[ "$(wc -l < files/etc/crontabs/root)" -eq 2 ] || { echo "ERROR: crontab line count changed (expected 2)"; exit 1; }
@@ -352,7 +356,12 @@ PYEOF
 	grep -q "timezone='CST-8'" files/etc/uci-defaults/99-set-timezone || { echo "ERROR: timezone script missing CST-8"; exit 1; }
 	grep -q "zonename='Asia/Shanghai'" files/etc/uci-defaults/99-set-timezone || { echo "ERROR: timezone script missing Asia/Shanghai"; exit 1; }
 	grep -q "uci commit system" files/etc/uci-defaults/99-set-timezone || { echo "ERROR: timezone script missing uci commit"; exit 1; }
-	echo "LED/timezone overlay check OK: 4 files in tree files/, scripts executable, content verified"
+	grep -q "192.168.2.209" files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init missing production LAN 192.168.2.209"; exit 1; }
+	grep -q "hostname='ax6000'" files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init missing hostname ax6000"; exit 1; }
+	grep -q "ssid='AX6000'" files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init missing open SSID AX6000"; exit 1; }
+	grep -q "encryption='none'" files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init missing open encryption none"; exit 1; }
+	grep -Fq '"$LAN_IP" = "192.168.2.1"' files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init missing factory-state guard (LAN 192.168.2.1)"; exit 1; }
+	echo "LED/timezone overlay check OK: 5 files in tree files/, scripts executable, content verified"
 	fi # end AX6000-only LED/timezone overlay
 
 	# OpenClash Meta core (2026-11-19, user decision) -- AX6000

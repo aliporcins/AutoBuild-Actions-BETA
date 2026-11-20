@@ -1,0 +1,45 @@
+#!/bin/sh
+# First-boot initialization for Xiaomi AX6000 (RA72) -- 2026-11-21.
+# Runs once via /etc/uci-defaults on first boot (factory state only).
+# Fixes the 9baca incident (2026-11-21): a config-loss flash came up
+# at the build default 192.168.2.1, colliding with the main router,
+# with WiFi off and the device unreachable at 192.168.2.209.
+#
+# Guard: only run when the LAN is still the build default 192.168.2.1
+# (config_generate just created it = factory state / config lost).
+# If the LAN is already 192.168.2.209 (preserved config) or anything
+# else (user-changed), exit without touching anything -- a sysupgrade
+# that preserves settings must never be overwritten by this script.
+# Timezone is NOT set here (99-set-timezone already handles it).
+
+LAN_IP=$(uci get network.lan.ipaddr 2>/dev/null)
+[ "$LAN_IP" = "192.168.2.1" ] || exit 0
+
+# Factory state: production LAN + hostname.
+uci set network.lan.ipaddr='192.168.2.209'
+uci set system.@system[0].hostname='ax6000'
+uci commit network
+uci commit system
+
+# WiFi: enable all radios, open SSID "AX6000" (no password).
+# config_generate already created wifi-device (disabled) + wifi-iface
+# (ssid OpenWrt, encryption none); just enable + rename.
+# Device/radio names are discovered dynamically, not hardcoded.
+if uci show wireless 2>/dev/null | grep -q "=wifi-device"; then
+	for dev in $(uci show wireless 2>/dev/null | sed -n "s/^wireless\.\([^.]*\)=wifi-device/\1/p"); do
+		uci set wireless."$dev".disabled='0'
+	done
+	for iface in $(uci show wireless 2>/dev/null | sed -n "s/^wireless\.\([^.]*\)=wifi-iface/\1/p"); do
+		uci set wireless."$iface".ssid='AX6000'
+		uci set wireless."$iface".encryption='none'
+		uci set wireless."$iface".mode='ap'
+		uci set wireless."$iface".network='lan'
+	done
+	uci commit wireless
+fi
+
+# Apply now (uci-defaults runs before network is fully up on first
+# boot; a reboot also applies it, but reload makes it immediate).
+/etc/init.d/network reload 2>/dev/null
+wifi reload 2>/dev/null
+exit 0
