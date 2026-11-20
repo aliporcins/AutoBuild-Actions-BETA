@@ -64,24 +64,31 @@ Firmware_Diy() {
 
 	# External packages, ALL pinned to exact commits (core3 lesson: never float
 	# on a moving branch). Runs after feeds install, before make defconfig.
-	# luci-app-totp REMOVED 2026-11-19 (user decision): the vendored
-	# package still sits in this repo under package/luci-app-totp/ but
-	# is no longer copied into the tree and no longer selected in
-	# Config, so it is not built. (It was never actually shipped in
-	# any NSS build -- defconfig silently dropped it before the copy
-	# step was added, found 2026-11-18.)
+	# luci-app-totp (vendored in this repo, user's own ucode package)
+	# -- x86_64 (main router) ONLY, restored 2026-11-20 (user
+	# decision: main router wants TOTP). It needs no clone here --
+	# BUT it does need copying into the tree: the repo's package/
+	# dir is not the openwrt tree's package/ dir, and nothing else
+	# copies it, so make defconfig silently dropped
+	# CONFIG_PACKAGE_luci-app-totp and every build so far shipped
+	# without TOTP (found 2026-11-18). AX6000 stays without it
+	# (removed 2026-11-19, user decision).
+	if ! grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
+	cp -a $GITHUB_WORKSPACE/package/luci-app-totp package/luci-app-totp
+	[ -d package/luci-app-totp ] || { echo "ERROR: vendored luci-app-totp missing from tree"; exit 1; }
+	fi
 
 	# Defensive: official 25.12 feeds ship no daed, but drop any feed copy
 	# if one ever appears, so the pinned kenzok8 copy is the only one.
 	rm -rf feeds/packages/net/daed feeds/luci/applications/luci-app-daed
 
-	# daed (dae + wing) + luci-app-daede UI -- kenzok8, pinned 2026-11-02
+	# daed (dae + wing) + luci-app-daede UI -- kenzok8, pinned 2026-11-19 (daed 2026.11.18)
 	# (switched from QiuSimons after runs 2-5 died in its Build/Prepare:
 	# ';'-chained pnpm web build, then missing system Go for go get).
 	# kenzok8's daed/Makefile Prepare only unpacks a CI prebuilt tarball
-	# (PKG_VERSION 2026.10.30, PKG_HASH 1850c01d...), no go get / pnpm.
+	# (PKG_VERSION 2026.11.18, PKG_HASH ae3f66c6...), no go get / pnpm.
 	git clone https://github.com/kenzok8/openwrt-daede /tmp/daed-src
-	git -C /tmp/daed-src checkout 1eedcafd1cd4d8a89ac928be6608df76ffb38f78
+	git -C /tmp/daed-src checkout 519c19312c8719513cf8a07f390ae2a273039eaa
 	cp -a /tmp/daed-src/daed package/daed
 	cp -a /tmp/daed-src/luci-app-daede package/luci-app-daede
 	# luci-app-daede/Makefile:83 installs ../dae/files/dae.config (run 8
@@ -94,7 +101,7 @@ Firmware_Diy() {
 	# case where the choice falls to DAED_USE_VMLINUX_BTF.
 	cp -a /tmp/daed-src/vmlinux-btf package/vmlinux-btf
 
-	# daed 2026.10.30 requires Go >= 1.27, but the 25.12 feed default is
+	# daed 2026.11.18 requires Go >= 1.27, but the 25.12 feed default is
 	# 1.26 (run 6 died on 'go.mod requires go >= 1.27.0'). Point only
 	# daed at the feed's versioned 1.27 host toolchain; everything else
 	# keeps the default 1.26 it already built fine with in run 6.
@@ -127,11 +134,28 @@ Firmware_Diy() {
 	fi
 	cp -a /tmp/openclash-src/luci-app-openclash package/luci-app-openclash
 
-	# Lucky: NOT cloned here. It was removed from the AX6000 (NSS)
-	# config 2026-11-19 (user decision, to make room for the
-	# OpenClash Meta core). Configs/x86_64 (main router) still
-	# selects CONFIG_PACKAGE_lucky / luci-app-lucky per user decision
-	# 2026-11-20 (kept as-is); the packages come from the feeds.
+	# Lucky UI + binary package (both dirs in the same pinned repo)
+	# -- x86_64 (main router) ONLY, restored 2026-11-20 (user
+	# decision: main router keeps Lucky). Removed from the AX6000
+	# (NSS) config 2026-11-19 (user decision, to make room for the
+	# OpenClash Meta core). It is NOT in any official 25.12 feed --
+	# the old "packages come from the feeds" comment was wrong, and
+	# run 44567316875 shipped without Lucky because defconfig
+	# silently dropped the still-selected symbols. Pin 91b50662 is
+	# the same as the 11-04 build that shipped Lucky 3.5.0-r1.
+	if ! grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
+	git clone https://github.com/gdy666/luci-app-lucky /tmp/lucky-src
+	git -C /tmp/lucky-src checkout 91b506627c1d81fa323816e3aeafcbde493d03a9
+	cp -a /tmp/lucky-src/luci-app-lucky package/luci-app-lucky
+	# luci-app-lucky declares +lucky, but only the UI dir was copied --
+	# run 9 died at package/install on `lucky (no such package)`. The
+	# sibling `lucky` binary package lives in the same pinned repo
+	# (prebuilt release tarball, no build work); copy it too. Same
+	# class of gap as run 9's dae/ sibling.
+	cp -a /tmp/lucky-src/lucky package/lucky
+	[ -d package/luci-app-lucky ] || { echo "ERROR: luci-app-lucky missing from tree"; exit 1; }
+	[ -d package/lucky ] || { echo "ERROR: lucky missing from tree"; exit 1; }
+	fi
 
 	# Disk manager (Lua + luci-compat, which exists in the 25.12 luci feed)
 	git clone https://github.com/lisaac/luci-app-diskman /tmp/diskman-src
