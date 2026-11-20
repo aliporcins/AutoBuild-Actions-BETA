@@ -100,6 +100,16 @@ Firmware_Diy() {
 	# integrated path and this package is not built; it only covers the
 	# case where the choice falls to DAED_USE_VMLINUX_BTF.
 	cp -a /tmp/daed-src/vmlinux-btf package/vmlinux-btf
+	# kenzok8 519c193 (daed 2026.11.18) Build/Prepare hard-requires
+	# package/ci/patches/dae-core/0001-keep-protocol-wrappers-in-tcp-relay.patch
+	# (DAE_CORE_PATCH_DIR is $(CURDIR)/../ci/patches/dae-core; the
+	# '@test -s' guard fails silently -- run 44650072855 died there
+	# with no tar error, only make Error 1). The old pin 1eedcafd
+	# (2026.10.30) had no such requirement, which is why earlier
+	# runs passed. Copy only the patches subtree, not the whole ci/.
+	mkdir -p package/ci
+	cp -a /tmp/daed-src/ci/patches package/ci/patches
+	[ -s package/ci/patches/dae-core/0001-keep-protocol-wrappers-in-tcp-relay.patch ] || { echo "ERROR: daed dae-core patch missing from kenzok8 clone"; exit 1; }
 
 	# daed 2026.11.18 requires Go >= 1.27, but the 25.12 feed default is
 	# 1.26 (run 6 died on 'go.mod requires go >= 1.27.0'). Point only
