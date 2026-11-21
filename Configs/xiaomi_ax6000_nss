@@ -61,25 +61,20 @@ CONFIG_PACKAGE_kmod-sched-bpf=y
 # CONFIG_PACKAGE_luci-app-ddns is not set
 # nginx-ssl removed 2026-11-18 (user-approved first-tier cleanup; unused on AX6000).
 # ttyd RESTORED 2026-11-22 (user correction: WOL/ttyd/ramfree/autoreboot are wanted).
-# UPnP / filemanager stay removed.
+# UPnP RESTORED 2026-11-22 (user correction: UPnP is wanted too).
+# filemanager stays removed.
 CONFIG_PACKAGE_ttyd=y
 CONFIG_PACKAGE_luci-app-ttyd=y
-# CONFIG_PACKAGE_miniupnpd is not set
-# CONFIG_PACKAGE_luci-app-upnp is not set
+# UPnP: miniupnpd-nftables is the nftables variant (matches fw4); the 40b10
+# baseline shipped miniupnpd-nftables (/usr/sbin/miniupnpd 185,003 B).
+CONFIG_PACKAGE_miniupnpd-nftables=y
+CONFIG_PACKAGE_luci-app-upnp=y
+CONFIG_PACKAGE_luci-i18n-upnp-zh-cn=y
 # CONFIG_PACKAGE_luci-app-filemanager is not set
-# Ruby: not selected 2026-11-21 (user decision: orphaned, nothing depends on
-# it). It was never a line in this config -- it rode into 40b10 via a
-# dependency/default. These lines pin it off; if the tree still selects it,
-# the post-build manifest check will show it.
-# CONFIG_PACKAGE_ruby is not set
-# CONFIG_PACKAGE_ruby-bigdecimal is not set
-# CONFIG_PACKAGE_ruby-date is not set
-# CONFIG_PACKAGE_ruby-digest is not set
-# CONFIG_PACKAGE_ruby-enc is not set
-# CONFIG_PACKAGE_ruby-pstore is not set
-# CONFIG_PACKAGE_ruby-psych is not set
-# CONFIG_PACKAGE_ruby-stringio is not set
-# CONFIG_PACKAGE_ruby-yaml is not set
+# Ruby STAYS 2026-11-22 (user correction: it is luci-app-openclash's hard
+# dependency -- ruby + ruby-yaml -- so it cannot be removed; defconfig
+# re-selects it even when pinned off. The 2026-11-21 pin-off lines were
+# removed; ruby was present in oc48013/oc48014 via the dependency anyway.)
 # Traffic monitor (added 2026-11-20, user request; scheme B same as x86_64):
 # nlbwmon only (official feed). It counts via conntrack, so software
 # flow offloading does NOT affect it. wrtbwmon was considered and
