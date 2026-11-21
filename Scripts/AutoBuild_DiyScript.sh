@@ -184,91 +184,68 @@ Firmware_Diy() {
 	# OTA REMOVED 2026-11-19 (user decision): no clone, no copy;
 	# Config no longer selects CONFIG_PACKAGE_luci-app-ota.
 
-	# Scheduled reboot UI (Lua; upstream has no luci-compat dep, add it
-	# fork-locally so it renders on ucode LuCI; its function is one cron
-	# line if it still fails Phase 1 verification)
-	# ROOT CAUSE (2026-11-18, run 44179668449 + 44237725082 logs): the
-	# package was cloned/copied fine but `make defconfig` silently
-	# dropped CONFIG_PACKAGE_luci-app-autoreboot -- its LUCI_DEPENDS
-	# named `+cron`, which is not a package in OpenWrt main (no
-	# standalone cron package exists; crond/crontab come from busybox,
-	# and no package in the luci feed depends on +cron). An
-	# unsatisfiable dep makes the symbol unselectable and defconfig
-	# drops the =y line with no warning. Fix: drop +cron (busybox
-	# already provides crond), keep +luci-compat. Fail fast if the
-	# sed does not match (upstream reordering the line must not
-	# silently reintroduce the drop).
-	git clone https://github.com/Wenjw28/luci-app-autoreboot /tmp/autoreboot-src
-	git -C /tmp/autoreboot-src checkout 53f6e73bfe8b5416a4e602791870c0d6e0f0920c
+	# Scheduled reboot UI (Lua; f8q8's Makefile is package.mk-based
+	# with an explicit install section -- it installs ./files/root/
+	# directly, so unlike Wenjw28's luci.mk version there is NO
+	# files/-ignored-by-luci.mk trap and NO restructure is needed.
+	# ROOT CAUSE of the old +cron drop (2026-11-18, runs 44179668449
+	# + 44237725082): Wenjw28's LUCI_DEPENDS named `+cron`, which is
+	# not a package in OpenWrt main; an unsatisfiable dep makes the
+	# symbol unselectable and defconfig drops the =y line silently.
+	# f8q8's Makefile names NO deps at all, so instead of a sed we
+	# ADD the deps the Lua UI needs on ucode LuCI: +luci-base (the
+	# framework) + +luci-compat (Lua compat shim). Fail fast if the
+	# insert does not apply. (Upstream source change 2026-11-21:
+	# Wenjw28/luci-app-autoreboot is gone -- GitHub API 404, and git
+	# ls-remote reproduces the runner's auth-prompt failure, which
+	# killed run 44875269339 at the clone step. f8q8's repo is the
+	# same package lineage: zxl78585's fork, renamed/transferred to
+	# f8q8; the 4 files and the cron-reboot logic are identical,
+	# only the files/ level differs (files/root/... vs files/...).
+	# Pinned to its only commit d211e56, 2017-09-22.)
+	git clone https://github.com/f8q8/luci-app-autoreboot /tmp/autoreboot-src
+	git -C /tmp/autoreboot-src checkout d211e5681093967015bf87167fd54a09f0727f3e
 	cp -a /tmp/autoreboot-src package/luci-app-autoreboot
-	# ROOT CAUSE #3 (2026-11-18, run 44265325657): upstream ships all 4
-	# files under files/ (files/etc/config, files/etc/init.d,
-	# files/usr/lib/lua/luci/controller, files/usr/lib/lua/luci/model/cbi),
-	# but luci.mk only installs luasrc/, ucode/, htdocs/ and root/ --
-	# files/ is silently ignored, so the package built EMPTY (apk db I:1,
-	# zero files) while the symbol and the config checks all passed.
-	# Restructure files/ into luci.mk layout, mirroring vendored
-	# luci-app-totp (luasrc/ + root/). Fail fast if upstream's files/
-	# layout changes (pinned commit 53f6e73 has exactly these 4 files).
+	# f8q8 ships the same 4 files under files/root/ (not files/).
+	# Fail fast if the layout changes (pinned commit d211e56 has
+	# exactly these 4 files).
 	[ "$(find package/luci-app-autoreboot/files -type f | wc -l)" -eq 4 ] || { echo "ERROR: autoreboot files/ layout changed (expected exactly 4 files)"; exit 1; }
-	mkdir -p package/luci-app-autoreboot/luasrc/controller package/luci-app-autoreboot/luasrc/model/cbi package/luci-app-autoreboot/root/etc/config package/luci-app-autoreboot/root/etc/init.d
-	mv package/luci-app-autoreboot/files/usr/lib/lua/luci/controller/autoreboot.lua package/luci-app-autoreboot/luasrc/controller/
-	mv package/luci-app-autoreboot/files/usr/lib/lua/luci/model/cbi/autoreboot.lua package/luci-app-autoreboot/luasrc/model/cbi/
-	mv package/luci-app-autoreboot/files/etc/config/autoreboot package/luci-app-autoreboot/root/etc/config/
-	mv package/luci-app-autoreboot/files/etc/init.d/autoreboot package/luci-app-autoreboot/root/etc/init.d/
-	# init script arrives 664 from git; it must be executable or procd
-	# cannot run it and `autoreboot enable` creates no rc.d symlink.
-	chmod 755 package/luci-app-autoreboot/root/etc/init.d/autoreboot
-	rm -rf package/luci-app-autoreboot/files
-	for f in luasrc/controller/autoreboot.lua luasrc/model/cbi/autoreboot.lua root/etc/config/autoreboot root/etc/init.d/autoreboot; do
-		[ -f "package/luci-app-autoreboot/$f" ] || { echo "ERROR: autoreboot file missing after restructure: $f"; exit 1; }
+	for f in root/etc/config/autoreboot root/etc/init.d/autoreboot root/usr/lib/lua/luci/controller/autoreboot.lua root/usr/lib/lua/luci/model/cbi/autoreboot.lua; do
+		[ -f "package/luci-app-autoreboot/files/$f" ] || { echo "ERROR: autoreboot file missing: files/$f"; exit 1; }
 	done
-	[ -x package/luci-app-autoreboot/root/etc/init.d/autoreboot ] || { echo "ERROR: autoreboot init script not executable"; exit 1; }
-	[ ! -e package/luci-app-autoreboot/files ] || { echo "ERROR: autoreboot files/ still present after restructure"; exit 1; }
-	sed -i 's/LUCI_DEPENDS:=+cron +luci-base/LUCI_DEPENDS:=+luci-base +luci-compat/' package/luci-app-autoreboot/Makefile
-	grep -q "LUCI_DEPENDS:=+luci-base +luci-compat" package/luci-app-autoreboot/Makefile || { echo "ERROR: autoreboot LUCI_DEPENDS fix did not apply"; exit 1; }
-	if grep -q "LUCI_DEPENDS:=.*+cron" package/luci-app-autoreboot/Makefile; then echo "ERROR: autoreboot Makefile still references +cron"; exit 1; fi
-	# ROOT CAUSE #2 (2026-11-18, runs 44255529707 + 44261474673 DIAG):
-	# even with +cron fixed, the package was invisible to Kconfig -- its
-	# symbol never appears in tmp/.config-package.in. include/scan.mk
-	# only discovers a package whose OWN Makefile contains a literal
-	# "call $(BuildPackage...)" line (grep over package/*/Makefile);
-	# upstream's Makefile ends at "include .../luci.mk" and has no such
-	# line -- luci.mk:404 does call BuildPackage (LUCI_BUILD_PACKAGES :=
-	# $(PKG_NAME)), but the scanner never reads luci.mk. Every other
-	# external package here carries the line (diskman/ramfree/ota as a
-	# comment, totp as comment + eval). Add both, mirroring totp.
-	# Without this, make defconfig silently drops the symbol no matter
-	# what the Config file requests. Fail fast if the line is absent.
-	echo "" >> package/luci-app-autoreboot/Makefile
-	echo "# call BuildPackage - OpenWrt buildroot signature" >> package/luci-app-autoreboot/Makefile
-	echo '$(eval $(call BuildPackage,$(PKG_NAME)))' >> package/luci-app-autoreboot/Makefile
-	grep -q 'call BuildPackage' package/luci-app-autoreboot/Makefile || { echo "ERROR: autoreboot BuildPackage line did not apply"; exit 1; }
+	# init script arrives 644 from git; INSTALL_BIN makes it 755 at
+	# install time, but keep it executable in the tree too.
+	chmod 755 package/luci-app-autoreboot/files/root/etc/init.d/autoreboot
+	[ -x package/luci-app-autoreboot/files/root/etc/init.d/autoreboot ] || { echo "ERROR: autoreboot init script not executable"; exit 1; }
+	# Deps the Lua UI needs on ucode LuCI (see comment above).
+	sed -i 's|^\tPKGARCH:=all$|\tDEPENDS:=+luci-base +luci-compat\n\tPKGARCH:=all|' package/luci-app-autoreboot/Makefile
+	grep -q "DEPENDS:=+luci-base +luci-compat" package/luci-app-autoreboot/Makefile || { echo "ERROR: autoreboot DEPENDS fix did not apply"; exit 1; }
+	if grep -q "DEPENDS:=.*+cron" package/luci-app-autoreboot/Makefile; then echo "ERROR: autoreboot Makefile references +cron"; exit 1; fi
+	# scan.mk only discovers a package whose OWN Makefile contains a
+	# literal "call $(BuildPackage...)" line; f8q8's Makefile already
+	# ends with $(eval $(call BuildPackage,luci-app-autoreboot)), so
+	# no append is needed -- just fail fast if the line is absent.
+	grep -q 'call BuildPackage' package/luci-app-autoreboot/Makefile || { echo "ERROR: autoreboot BuildPackage line missing"; exit 1; }
 
-	# Scheduled reboot UI text (2026-11-19, user decision): upstream
-	# Wenjw28's menu name is English ("Scheduled Reboot") so the
-	# browser tab shows English, and its description names the wrong
-	# hardware/branch ("MT7987A / OpenWrt 25.10") -- AX6000 is IPQ5018
-	# and this firmware is the NSS fork, not 25.10. Fix both strings
-	# in the vendored sources (controller menu name, CBI description);
-	# the CBI page body itself is already Chinese and is untouched.
-	# Fail fast if either sed does not match (upstream rewording must
-	# not silently ship the wrong text again).
-	sed -i 's/_("Scheduled Reboot")/_("定时重启")/' package/luci-app-autoreboot/luasrc/controller/autoreboot.lua
-	grep -q '_("定时重启")' package/luci-app-autoreboot/luasrc/controller/autoreboot.lua || { echo "ERROR: autoreboot menu name fix did not apply"; exit 1; }
-	if grep -q 'Scheduled Reboot' package/luci-app-autoreboot/luasrc/controller/autoreboot.lua; then echo "ERROR: autoreboot controller still contains Scheduled Reboot"; exit 1; fi
+	# Scheduled reboot UI text (2026-11-19, user decision): f8q8's
+	# menu name is already Chinese ("定时重启"); its description is
+	# the generic "配置定时重启。" with no wrong hardware/branch
+	# name. Keep the menu-name fix as a no-op guard (it still fixes
+	# an upstream revert to English), and put the device name into
+	# the description. Fail fast if either sed does not match.
+	sed -i 's/_("Scheduled Reboot")/_("定时重启")/' package/luci-app-autoreboot/files/root/usr/lib/lua/luci/controller/autoreboot.lua
+	grep -q '_("定时重启")' package/luci-app-autoreboot/files/root/usr/lib/lua/luci/controller/autoreboot.lua || { echo "ERROR: autoreboot menu name fix did not apply"; exit 1; }
+	if grep -q 'Scheduled Reboot' package/luci-app-autoreboot/files/root/usr/lib/lua/luci/controller/autoreboot.lua; then echo "ERROR: autoreboot controller still contains Scheduled Reboot"; exit 1; fi
 	# Description names the device: AX6000 (NSS fork) keeps its device
-	# name; x86_64 (main router) and other targets get generic text
-	# with no wrong hardware/branch name. The menu-name fix above
-	# ("定时重启") is generic and applies to all targets.
+	# name; x86_64 (main router) and other targets get generic text.
 	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
-		sed -i 's|MT7987A / OpenWrt 25.10 定时重启插件|小米 AX6000 定时重启插件|' package/luci-app-autoreboot/luasrc/model/cbi/autoreboot.lua
-		grep -q '小米 AX6000 定时重启插件' package/luci-app-autoreboot/luasrc/model/cbi/autoreboot.lua || { echo "ERROR: autoreboot description fix did not apply"; exit 1; }
+		sed -i 's|配置定时重启。|小米 AX6000 定时重启插件。|' package/luci-app-autoreboot/files/root/usr/lib/lua/luci/model/cbi/autoreboot.lua
+		grep -q '小米 AX6000 定时重启插件' package/luci-app-autoreboot/files/root/usr/lib/lua/luci/model/cbi/autoreboot.lua || { echo "ERROR: autoreboot description fix did not apply"; exit 1; }
 	else
-		sed -i 's|MT7987A / OpenWrt 25.10 定时重启插件|定时重启插件|' package/luci-app-autoreboot/luasrc/model/cbi/autoreboot.lua
-		grep -q '定时重启插件' package/luci-app-autoreboot/luasrc/model/cbi/autoreboot.lua || { echo "ERROR: autoreboot description fix did not apply"; exit 1; }
+		sed -i 's|配置定时重启。|定时重启插件|' package/luci-app-autoreboot/files/root/usr/lib/lua/luci/model/cbi/autoreboot.lua
+		grep -q '定时重启插件' package/luci-app-autoreboot/files/root/usr/lib/lua/luci/model/cbi/autoreboot.lua || { echo "ERROR: autoreboot description fix did not apply"; exit 1; }
 	fi
-	if grep -q 'MT7987A' package/luci-app-autoreboot/luasrc/model/cbi/autoreboot.lua; then echo "ERROR: autoreboot CBI still contains MT7987A"; exit 1; fi
+	if grep -q 'MT7987A' package/luci-app-autoreboot/files/root/usr/lib/lua/luci/model/cbi/autoreboot.lua; then echo "ERROR: autoreboot CBI still contains MT7987A"; exit 1; fi
 
 	# cloudflared: NOT cloned here (it comes from the feeds). It was
 	# removed from the AX6000 (NSS) config 2026-11-19 (user decision,
