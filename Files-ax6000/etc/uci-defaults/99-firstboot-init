@@ -11,8 +11,19 @@
 # else (user-changed), exit without touching anything -- a sysupgrade
 # that preserves settings must never be overwritten by this script.
 # Timezone is NOT set here (99-set-timezone already handles it).
-
-LAN_IP=$(uci get network.lan.ipaddr 2>/dev/null)
+#
+# Race fix (2026-11-21): on the 40b10 flash this script ran before the
+# network config existed, so `uci get` returned empty, the guard below
+# failed, and the script exited + self-deleted while the LAN stayed at
+# the build default 192.168.2.1. Wait for the config to appear first;
+# if it still never appears, treat it as factory state (.1) -- that is
+# what config_generate will create.
+for i in 1 2 3 4 5 6; do
+    LAN_IP=$(uci get network.lan.ipaddr 2>/dev/null)
+    [ -n "$LAN_IP" ] && break
+    sleep 5
+done
+[ -z "$LAN_IP" ] && LAN_IP="192.168.2.1"
 [ "$LAN_IP" = "192.168.2.1" ] || exit 0
 
 # Factory state: production LAN + hostname.
