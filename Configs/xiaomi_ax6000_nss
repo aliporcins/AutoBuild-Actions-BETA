@@ -38,11 +38,13 @@ CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
 CONFIG_PACKAGE_luci-compat=y
 CONFIG_PACKAGE_kmod-tun=y
 
-# WireGuard restored 2026-11-21 (user decision: WARP client via luci-proto-wireguard).
-CONFIG_PACKAGE_kmod-wireguard=y
-CONFIG_PACKAGE_luci-proto-wireguard=y
-CONFIG_PACKAGE_wireguard-tools=y
-CONFIG_PACKAGE_luci-app-wireguard=y
+# WireGuard REMOVED 2026-11-21 (user decision: AX6000 is a pure AP now;
+# WARP moves to sing-box MASQUE on the main router; the 99-wireguard-warp
+# firstboot file and pbr split-tunnel config were removed with it).
+# CONFIG_PACKAGE_kmod-wireguard is not set
+# CONFIG_PACKAGE_luci-proto-wireguard is not set
+# CONFIG_PACKAGE_wireguard-tools is not set
+# CONFIG_PACKAGE_luci-app-wireguard is not set
 
 # Scheduler kmods for dae traffic control: NET_SCH_INGRESS / NET_CLS_BPF /
 # NET_CLS_ACT are provided by these (daed's DEPENDS pulls them in too, but
@@ -51,16 +53,32 @@ CONFIG_PACKAGE_kmod-sched-core=y
 CONFIG_PACKAGE_kmod-sched-bpf=y
 
 # Official feeds
-CONFIG_PACKAGE_ddns-scripts=y
-CONFIG_PACKAGE_ddns-scripts-aliyun=y
-CONFIG_PACKAGE_ddns-scripts-dnspod=y
-CONFIG_PACKAGE_luci-app-ddns=y
+# DDNS REMOVED 2026-11-21 (user decision: DDNS runs on the main router via Lucky;
+# unused on the AX6000 AP).
+# CONFIG_PACKAGE_ddns-scripts is not set
+# CONFIG_PACKAGE_ddns-scripts-aliyun is not set
+# CONFIG_PACKAGE_ddns-scripts-dnspod is not set
+# CONFIG_PACKAGE_luci-app-ddns is not set
 # nginx-ssl removed 2026-11-18 (user-approved first-tier cleanup; unused on AX6000).
-CONFIG_PACKAGE_ttyd=y
-CONFIG_PACKAGE_luci-app-ttyd=y
-CONFIG_PACKAGE_miniupnpd=y
-CONFIG_PACKAGE_luci-app-upnp=y
-CONFIG_PACKAGE_luci-app-filemanager=y
+# ttyd / UPnP / filemanager REMOVED 2026-11-21 (user decision: unused on the AX6000 AP).
+# CONFIG_PACKAGE_ttyd is not set
+# CONFIG_PACKAGE_luci-app-ttyd is not set
+# CONFIG_PACKAGE_miniupnpd is not set
+# CONFIG_PACKAGE_luci-app-upnp is not set
+# CONFIG_PACKAGE_luci-app-filemanager is not set
+# Ruby: not selected 2026-11-21 (user decision: orphaned, nothing depends on
+# it). It was never a line in this config -- it rode into 40b10 via a
+# dependency/default. These lines pin it off; if the tree still selects it,
+# the post-build manifest check will show it.
+# CONFIG_PACKAGE_ruby is not set
+# CONFIG_PACKAGE_ruby-bigdecimal is not set
+# CONFIG_PACKAGE_ruby-date is not set
+# CONFIG_PACKAGE_ruby-digest is not set
+# CONFIG_PACKAGE_ruby-enc is not set
+# CONFIG_PACKAGE_ruby-pstore is not set
+# CONFIG_PACKAGE_ruby-psych is not set
+# CONFIG_PACKAGE_ruby-stringio is not set
+# CONFIG_PACKAGE_ruby-yaml is not set
 # Traffic monitor (added 2026-11-20, user request; scheme B same as x86_64):
 # nlbwmon only (official feed). It counts via conntrack, so software
 # flow offloading does NOT affect it. wrtbwmon was considered and
@@ -71,10 +89,12 @@ CONFIG_PACKAGE_nlbwmon=y
 CONFIG_PACKAGE_luci-app-nlbwmon=y
 CONFIG_PACKAGE_luci-lib-chartjs=y
 CONFIG_PACKAGE_luci-i18n-nlbwmon-zh-cn=y
-# cloudflared restored 2026-11-21 (user decision).
-CONFIG_PACKAGE_cloudflared=y
-CONFIG_PACKAGE_luci-app-cloudflared=y
-CONFIG_PACKAGE_luci-i18n-cloudflared-zh-cn=y
+# cloudflared REMOVED 2026-11-21 (user decision: 24.5MB freed; the tunnel runs on
+# the main router, not the AX6000 AP). Its LuCI app + Chinese pack go with it;
+# all other luci-i18n-*-zh-cn packs stay (user decision 2026-11-21).
+# CONFIG_PACKAGE_cloudflared is not set
+# CONFIG_PACKAGE_luci-app-cloudflared is not set
+# CONFIG_PACKAGE_luci-i18n-cloudflared-zh-cn is not set
 
 # mDNS responder (added 2026-11-18, user request: ax6000.local out of the box).
 # umdns ships its own default /etc/config/umdns (list network lan) which
@@ -83,20 +103,19 @@ CONFIG_PACKAGE_luci-i18n-cloudflared-zh-cn=y
 # after flashing. Android devices do not resolve .local (no mDNS client).
 CONFIG_PACKAGE_umdns=y
 
-# Wake-on-LAN (added 2026-11-13, user request; only these two packages).
-# etherwake (packages feed) sends magic packets from the command line;
-# luci-app-wol (luci feed) provides the LuCI web UI (depends on etherwake).
-CONFIG_PACKAGE_etherwake=y
-CONFIG_PACKAGE_luci-app-wol=y
+# Wake-on-LAN REMOVED 2026-11-21 (user decision: unused on the AX6000 AP;
+# etherwake + luci-app-wol go together).
+# CONFIG_PACKAGE_etherwake is not set
+# CONFIG_PACKAGE_luci-app-wol is not set
 
 # No USB on AX6000 hardware (2026-11-18, user-confirmed: no USB port;
 # USB 3.0 is on AX9000, not AX6000). kmod-usb-storage + block-mount
 # were added in the merged build but removed again the same day --
 # nothing can be plugged in. luci-app-diskman was removed 2026-11-18
 # (user-approved first-tier cleanup; no drives to manage); filemanager
-# stays (a separate audit is deciding whether it has other uses on a
-# USB-less box); neither depends on or selects block-mount (verified
-# against their Makefiles), so removing these lines cannot drop them.
+# was removed 2026-11-21 (user decision, unused on the AP); neither
+# depends on or selects block-mount (verified against their Makefiles),
+# so removing these lines cannot drop them.
 # Target-tree defaults disabled (2026-11-18, user-approved first-tier
 # cleanup; AX6000 has no USB port and no local storage to mount):
 # CONFIG_PACKAGE_kmod-usb3 is not set
@@ -110,19 +129,27 @@ CONFIG_PACKAGE_luci-app-wol=y
 # CONFIG_PACKAGE_daed is not set
 # CONFIG_PACKAGE_luci-app-daede is not set
 CONFIG_PACKAGE_luci-app-openclash=y
+# sing-box-tiny (added 2026-11-21, user decision: TRY to bake the tiny build
+# in; 32MB uncompressed / ~14MB squashfs. If the image does not fit, drop
+# this line and rebuild without it -- do NOT cut WiFi/NSS/dnsmasq/firewall/
+# LuCI/i18n to make room).
+CONFIG_PACKAGE_sing-box-tiny=y
 # CONFIG_PACKAGE_luci-app-lucky is not set (removed 2026-11-19, user decision: room for OpenClash Meta core)
 # CONFIG_PACKAGE_lucky is not set (removed 2026-11-19, user decision: room for OpenClash Meta core)
 # luci-app-diskman removed 2026-11-18 (user-approved first-tier cleanup;
 # no USB port, no drives to manage on AX6000).
-CONFIG_PACKAGE_luci-app-ramfree=y
+# luci-app-ramfree + luci-app-autoreboot REMOVED 2026-11-21 (user decision:
+# unused on the AX6000 AP; autoreboot's scheduled reboot is not wanted).
+# (DiyScript autoreboot block + workflow defconfig/post-build gates are
+# guarded/removed with it; x86_64 still selects autoreboot.)
+# CONFIG_PACKAGE_luci-app-ramfree is not set
 # CONFIG_PACKAGE_luci-app-ota is not set (removed 2026-11-19, user decision)
-CONFIG_PACKAGE_luci-app-autoreboot=y
+# CONFIG_PACKAGE_luci-app-autoreboot is not set
 
-# Policy-based routing for WARP split tunnel (added 2026-11-21, user decision):
-# China direct via wan, foreign via warp WireGuard. pbr is in the official
-# packages feed (nft-based since 1.2.x; ipset support was dropped upstream).
-CONFIG_PACKAGE_pbr=y
-CONFIG_PACKAGE_luci-app-pbr=y
+# pbr REMOVED 2026-11-21 (user decision: the WARP split tunnel moves to sing-box
+# MASQUE on the main router; no split routing on the AX6000 AP).
+# CONFIG_PACKAGE_pbr is not set
+# CONFIG_PACKAGE_luci-app-pbr is not set
 
 # luci-app-totp restored 2026-11-21 (user decision; vendored package in repo under package/luci-app-totp/)
 CONFIG_PACKAGE_luci-app-totp=y

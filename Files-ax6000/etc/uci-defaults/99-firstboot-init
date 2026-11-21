@@ -18,6 +18,14 @@
 # the build default 192.168.2.1. Wait for the config to appear first;
 # if it still never appears, treat it as factory state (.1) -- that is
 # what config_generate will create.
+# sysupgrade.tgz cleanup (2026-11-21, root-cause fix): sysupgrade leaves its
+# config-backup tarball at /overlay/sysupgrade.tgz (26.8MB on 40b10) and never
+# deletes it; on the 25MB overlay partition that fills it to 100%, the next
+# boot cannot mount the overlay and falls back to a RAM overlay (= factory
+# state: no WiFi password, LAN back to default, SSH host key regenerated).
+# Delete it on first boot, before anything else -- the config restore (if
+# any) already happened in preinit, so this file is pure leftover.
+rm -f /overlay/sysupgrade.tgz
 for i in 1 2 3 4 5 6; do
     LAN_IP=$(uci get network.lan.ipaddr 2>/dev/null)
     [ -n "$LAN_IP" ] && break

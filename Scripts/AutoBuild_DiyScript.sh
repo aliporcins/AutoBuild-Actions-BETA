@@ -176,14 +176,22 @@ Firmware_Diy() {
 	git -C /tmp/diskman-src checkout c20df1d4f40d86e32fd919f33122b2a48f8a99b4
 	cp -a /tmp/diskman-src/applications/luci-app-diskman package/luci-app-diskman
 
-	# RAM-free (JS)
+	# RAM-free (JS) -- only when selected (removed from AX6000 2026-11-21,
+	# user decision; x86_64 still selects it, so the clone stays guarded,
+	# not deleted).
+	if grep -q "^CONFIG_PACKAGE_luci-app-ramfree=y" .config 2>/dev/null; then
 	git clone https://github.com/sbwml/luci-app-ramfree /tmp/ramfree-src
 	git -C /tmp/ramfree-src checkout 54dc42ded2e19f2f191b3ee54ac952f9d4acc8f4
 	cp -a /tmp/ramfree-src package/luci-app-ramfree
+	fi
 
 	# OTA REMOVED 2026-11-19 (user decision): no clone, no copy;
 	# Config no longer selects CONFIG_PACKAGE_luci-app-ota.
 
+	# Scheduled reboot (2026-11-21: only when selected -- removed from
+	# AX6000, user decision; x86_64 still selects it, so the block stays
+	# guarded, not deleted).
+	if grep -q "^CONFIG_PACKAGE_luci-app-autoreboot=y" .config 2>/dev/null; then
 	# Scheduled reboot UI (Lua; f8q8's Makefile is package.mk-based
 	# with an explicit install section -- it installs ./files/root/
 	# directly, so unlike Wenjw28's luci.mk version there is NO
@@ -246,12 +254,15 @@ Firmware_Diy() {
 		grep -q '定时重启插件' package/luci-app-autoreboot/files/root/usr/lib/lua/luci/model/cbi/autoreboot.lua || { echo "ERROR: autoreboot description fix did not apply"; exit 1; }
 	fi
 	if grep -q 'MT7987A' package/luci-app-autoreboot/files/root/usr/lib/lua/luci/model/cbi/autoreboot.lua; then echo "ERROR: autoreboot CBI still contains MT7987A"; exit 1; fi
+	fi # end autoreboot (guarded: only when selected)
 
 	# cloudflared: NOT cloned here (it comes from the feeds). It was
 	# removed from the AX6000 (NSS) config 2026-11-19 (user decision,
-	# to make room for the OpenClash Meta core). Configs/x86_64 (main
-	# router) still selects CONFIG_PACKAGE_cloudflared per user
-	# decision 2026-11-20 (kept as-is).
+	# to make room for the OpenClash Meta core), restored 2026-11-21,
+	# and removed again 2026-11-21 (user decision: tunnel runs on the
+	# main router, not the AX6000 AP). Configs/x86_64 (main router)
+	# still selects CONFIG_PACKAGE_cloudflared per user decision
+	# 2026-11-20 (kept as-is).
 
 	# Mount Points + Plugins menu entries (2026-11-19, mounts-fix +
 	# plugins-hide, user decision) -- AX6000 (qualcommax) ONLY.
@@ -313,28 +324,25 @@ PYEOF
 	# image identical to the current one.
 	# Fail fast if any vendored file is missing or its content drifts.
 	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
-	mkdir -p files/root files/etc/crontabs files/etc/uci-defaults files/etc/config files/usr/share/pbr
+	mkdir -p files/root files/etc/crontabs files/etc/uci-defaults files/etc/config
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/root/led-night.sh" files/root/led-night.sh
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/root/led-day.sh" files/root/led-day.sh
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/crontabs/root" files/etc/crontabs/root
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/uci-defaults/99-set-timezone" files/etc/uci-defaults/99-set-timezone
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/uci-defaults/99-firstboot-init" files/etc/uci-defaults/99-firstboot-init
-	# Static wireless (psk2, NO key -- password entered in LuCI after flashing),
-	# disabled-by-default WARP WireGuard interface, and pbr split-tunnel
-	# config + China-list user file (all added 2026-11-21, user decision).
+	# Static wireless (psk2, NO key -- password entered in LuCI after flashing).
+	# (2026-11-21: the disabled-by-default WARP WireGuard interface and the
+	# pbr split-tunnel config + China-list user file were removed with
+	# WireGuard/pbr -- AX6000 is a pure AP now.)
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/config/wireless" files/etc/config/wireless
-	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/uci-defaults/99-wireguard-warp" files/etc/uci-defaults/99-wireguard-warp
-	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/config/pbr" files/etc/config/pbr
-	cp -a "$GITHUB_WORKSPACE/Files-ax6000/usr/share/pbr/pbr.user.china" files/usr/share/pbr/pbr.user.china
-	chmod 755 files/root/led-night.sh files/root/led-day.sh files/etc/uci-defaults/99-set-timezone files/etc/uci-defaults/99-firstboot-init files/etc/uci-defaults/99-wireguard-warp
-	for f in root/led-night.sh root/led-day.sh etc/crontabs/root etc/uci-defaults/99-set-timezone etc/uci-defaults/99-firstboot-init etc/config/wireless etc/uci-defaults/99-wireguard-warp etc/config/pbr usr/share/pbr/pbr.user.china; do
+	chmod 755 files/root/led-night.sh files/root/led-day.sh files/etc/uci-defaults/99-set-timezone files/etc/uci-defaults/99-firstboot-init
+	for f in root/led-night.sh root/led-day.sh etc/crontabs/root etc/uci-defaults/99-set-timezone etc/uci-defaults/99-firstboot-init etc/config/wireless; do
 		[ -f "files/$f" ] || { echo "ERROR: LED/timezone overlay missing from tree files/: $f"; exit 1; }
 	done
 	[ -x files/root/led-night.sh ] || { echo "ERROR: led-night.sh not executable in tree files/"; exit 1; }
 	[ -x files/root/led-day.sh ] || { echo "ERROR: led-day.sh not executable in tree files/"; exit 1; }
 	[ -x files/etc/uci-defaults/99-set-timezone ] || { echo "ERROR: 99-set-timezone not executable in tree files/"; exit 1; }
 	[ -x files/etc/uci-defaults/99-firstboot-init ] || { echo "ERROR: 99-firstboot-init not executable in tree files/"; exit 1; }
-	[ -x files/etc/uci-defaults/99-wireguard-warp ] || { echo "ERROR: 99-wireguard-warp not executable in tree files/"; exit 1; }
 	[ "$(wc -l < files/root/led-night.sh)" -eq 7 ] || { echo "ERROR: led-night.sh line count changed (expected 7)"; exit 1; }
 	[ "$(wc -l < files/root/led-day.sh)" -eq 2 ] || { echo "ERROR: led-day.sh line count changed (expected 2)"; exit 1; }
 	[ "$(wc -l < files/etc/crontabs/root)" -eq 2 ] || { echo "ERROR: crontab line count changed (expected 2)"; exit 1; }
@@ -349,22 +357,13 @@ PYEOF
 	! grep -q "192.168.2.209" files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init still contains old LAN 192.168.2.209"; exit 1; }
 	grep -q "hostname='ax6000'" files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init missing hostname ax6000"; exit 1; }
 	grep -Fq '"$LAN_IP" = "192.168.2.1"' files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init missing factory-state guard (LAN 192.168.2.1)"; exit 1; }
+	grep -q "rm -f /overlay/sysupgrade.tgz" files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init missing sysupgrade.tgz cleanup"; exit 1; }
 	# Static wireless: SSIDs 5G/2.4G/5G, channels 36/1/36, psk2, NO key line.
 	grep -q "option ssid '5G'" files/etc/config/wireless || { echo "ERROR: wireless missing SSID 5G"; exit 1; }
 	grep -q "option ssid '2.4G'" files/etc/config/wireless || { echo "ERROR: wireless missing SSID 2.4G"; exit 1; }
 	grep -q "option encryption 'psk2'" files/etc/config/wireless || { echo "ERROR: wireless missing psk2"; exit 1; }
 	! grep -q "option key" files/etc/config/wireless || { echo "ERROR: wireless contains a key line (password must never enter firmware)"; exit 1; }
-	# WARP interface: disabled by default, no default route via WG.
-	grep -q "network.warp.disabled='1'" files/etc/uci-defaults/99-wireguard-warp || { echo "ERROR: 99-wireguard-warp missing disabled=1"; exit 1; }
-	grep -q "route_allowed_ips='0'" files/etc/uci-defaults/99-wireguard-warp || { echo "ERROR: 99-wireguard-warp missing route_allowed_ips=0"; exit 1; }
-	grep -q "network.warp_peer=wireguard_warp" files/etc/uci-defaults/99-wireguard-warp || { echo "ERROR: 99-wireguard-warp missing warp peer section"; exit 1; }
-	# pbr split tunnel: China direct via wan, foreign via warp.
-	grep -q "option interface 'warp'" files/etc/config/pbr || { echo "ERROR: pbr config missing warp policy"; exit 1; }
-	grep -q "pbr.user.china" files/etc/config/pbr || { echo "ERROR: pbr config missing China user file include"; exit 1; }
-	! grep -q "pbr.user.china.uc" files/etc/config/pbr || { echo "ERROR: pbr config still references .uc user file (pbr 1.2.2 needs shell script)"; exit 1; }
-	grep -q "china_ip_list" files/usr/share/pbr/pbr.user.china || { echo "ERROR: pbr.user.china missing China list URL"; exit 1; }
-	sh -n files/usr/share/pbr/pbr.user.china || { echo "ERROR: pbr.user.china fails shell syntax check (pbr 1.2.2 sources it with ash)"; exit 1; }
-	echo "LED/timezone overlay check OK: 9 files in tree files/, scripts executable, content verified"
+	echo "LED/timezone overlay check OK: 6 files in tree files/, scripts executable, content verified"
 	fi # end AX6000-only LED/timezone overlay
 
 	# OpenClash Meta core (2026-11-19, user decision) -- AX6000
