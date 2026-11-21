@@ -1,5 +1,5 @@
 # OpenWrt NSS (kuncy7/openwrt-nss-edma, kernel 6.18) / qualcommax ipq50xx / xiaomi_ax6000 -- seed .config for aliporcins/AutoBuild-Actions-BETA
-# Xiaomi AX6000 (RA72, IPQ5018) NSS test build: daed + luci-app-openclash + NSS hardware offload.
+# Xiaomi AX6000 (RA72, IPQ5018) NSS test build: luci-app-openclash + NSS hardware offload.
 # Built from kuncy7/openwrt-nss-edma branch c3po-tag-8021q (OpenWrt main 2026-10-09 + kernel 6.18 + NSS).
 # Parallel to the OpenWrt 25.12 fourth build (Configs/xiaomi_ax6000): this file and its
 # workflow (AutoBuild-xiaomi_ax6000_nss.yml) are independent -- the 25.12 build is untouched.
@@ -38,10 +38,11 @@ CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
 CONFIG_PACKAGE_luci-compat=y
 CONFIG_PACKAGE_kmod-tun=y
 
-# WireGuard removed 2026-11-19 (user decision: not wanted on AX6000).
-# CONFIG_PACKAGE_kmod-wireguard is not set
-# CONFIG_PACKAGE_luci-proto-wireguard is not set
-# CONFIG_PACKAGE_wireguard-tools is not set
+# WireGuard restored 2026-11-21 (user decision: WARP client via luci-proto-wireguard).
+CONFIG_PACKAGE_kmod-wireguard=y
+CONFIG_PACKAGE_luci-proto-wireguard=y
+CONFIG_PACKAGE_wireguard-tools=y
+CONFIG_PACKAGE_luci-app-wireguard=y
 
 # Scheduler kmods for dae traffic control: NET_SCH_INGRESS / NET_CLS_BPF /
 # NET_CLS_ACT are provided by these (daed's DEPENDS pulls them in too, but
@@ -70,7 +71,10 @@ CONFIG_PACKAGE_nlbwmon=y
 CONFIG_PACKAGE_luci-app-nlbwmon=y
 CONFIG_PACKAGE_luci-lib-chartjs=y
 CONFIG_PACKAGE_luci-i18n-nlbwmon-zh-cn=y
-# CONFIG_PACKAGE_cloudflared is not set (removed 2026-11-19, user decision: room for OpenClash Meta core)
+# cloudflared restored 2026-11-21 (user decision).
+CONFIG_PACKAGE_cloudflared=y
+CONFIG_PACKAGE_luci-app-cloudflared=y
+CONFIG_PACKAGE_luci-i18n-cloudflared-zh-cn=y
 
 # mDNS responder (added 2026-11-18, user request: ax6000.local out of the box).
 # umdns ships its own default /etc/config/umdns (list network lan) which
@@ -103,8 +107,8 @@ CONFIG_PACKAGE_luci-app-wol=y
 # CONFIG_PACKAGE_losetup is not set
 
 # External packages (cloned at pinned commits by Scripts/AutoBuild_DiyScript.sh)
-CONFIG_PACKAGE_daed=y
-CONFIG_PACKAGE_luci-app-daede=y
+# CONFIG_PACKAGE_daed is not set
+# CONFIG_PACKAGE_luci-app-daede is not set
 CONFIG_PACKAGE_luci-app-openclash=y
 # CONFIG_PACKAGE_luci-app-lucky is not set (removed 2026-11-19, user decision: room for OpenClash Meta core)
 # CONFIG_PACKAGE_lucky is not set (removed 2026-11-19, user decision: room for OpenClash Meta core)
@@ -114,7 +118,14 @@ CONFIG_PACKAGE_luci-app-ramfree=y
 # CONFIG_PACKAGE_luci-app-ota is not set (removed 2026-11-19, user decision)
 CONFIG_PACKAGE_luci-app-autoreboot=y
 
-# CONFIG_PACKAGE_luci-app-totp is not set (removed 2026-11-19, user decision; vendored package still in repo under package/luci-app-totp/ but no longer copied or selected)
+# Policy-based routing for WARP split tunnel (added 2026-11-21, user decision):
+# China direct via wan, foreign via warp WireGuard. pbr is in the official
+# packages feed (nft-based since 1.2.x; ipset support was dropped upstream).
+CONFIG_PACKAGE_pbr=y
+CONFIG_PACKAGE_luci-app-pbr=y
+
+# luci-app-totp restored 2026-11-21 (user decision; vendored package in repo under package/luci-app-totp/)
+CONFIG_PACKAGE_luci-app-totp=y
 
 # Kernel BTF for dae/daed CO-RE (same as the x86_64 config): daed's BTF
 # choice defaults to DAED_USE_KERNEL_BTF but depends on KERNEL_DEBUG_INFO_BTF;

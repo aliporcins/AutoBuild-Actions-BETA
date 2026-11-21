@@ -1,0 +1,42 @@
+# Policy-based routing for Xiaomi AX6000 (RA72) -- 2026-11-21.
+# Split tunnel: China direct via wan, everything else via the warp
+# WireGuard interface (Cloudflare WARP, created disabled by
+# 99-wireguard-warp; user enables it in LuCI when wanted).
+#
+# How it works (pbr 1.2.x, nft-based; upstream dropped ipset support,
+# so the "China address set" is an nft set, not an ipset):
+#  - /usr/share/pbr/pbr.user.china.uc (enabled below) downloads the
+#    China IPv4 list and fills pbr's per-interface user set
+#    pbr_wan_4_dst_ip_user. pbr emits that set's match rule in
+#    pbr_prerouting ahead of the policy rules, so China destinations
+#    are marked for the wan table first.
+#  - The catch-all policy below then sends everything else via warp.
+#  - No 0.0.0.0/0 default route is ever pointed at WG (the warp peer
+#    has route_allowed_ips '0'); only pbr-marked traffic uses it.
+#  - strict_enforcement is 0 on purpose: warp starts DISABLED, and a
+#    down warp must not blackhole foreign traffic -- it falls back to
+#    the default route (wan) instead of dropping.
+#  - While warp is disabled (default), pbr routes nothing via WG.
+# Verify on the device after enabling warp:
+#   nft list chain inet fw4 pbr_prerouting   (china set rule first)
+#   service pbr status
+config pbr 'config'
+	option enabled '1'
+	option verbosity '2'
+	option strict_enforcement '0'
+	option resolver_set 'none'
+	option ipv6_enabled '0'
+	option boot_timeout '30'
+	option procd_reload_delay '1'
+	list supported_interface 'warp'
+	list ignored_interface 'loopback'
+
+config include
+	option path '/usr/share/pbr/pbr.user.china.uc'
+	option enabled '1'
+
+config policy
+	option name 'Foreign-via-WARP'
+	option interface 'warp'
+	option dest_addr '0.0.0.0/0'
+	option enabled '1'

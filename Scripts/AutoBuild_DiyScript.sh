@@ -64,58 +64,62 @@ Firmware_Diy() {
 
 	# External packages, ALL pinned to exact commits (core3 lesson: never float
 	# on a moving branch). Runs after feeds install, before make defconfig.
-	# luci-app-totp (vendored in this repo, user's own ucode package)
-	# -- x86_64 (main router) ONLY, restored 2026-11-20 (user
-	# decision: main router wants TOTP). It needs no clone here --
-	# BUT it does need copying into the tree: the repo's package/
-	# dir is not the openwrt tree's package/ dir, and nothing else
-	# copies it, so make defconfig silently dropped
-	# CONFIG_PACKAGE_luci-app-totp and every build so far shipped
-	# without TOTP (found 2026-11-18). AX6000 stays without it
-	# (removed 2026-11-19, user decision).
-	if ! grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
+	# luci-app-totp (vendored in this repo, user's own ucode package).
+	# Restored on x86_64 2026-11-20 and on AX6000 2026-11-21 (user
+	# decisions). It needs no clone here -- BUT it does need copying
+	# into the tree: the repo's package/ dir is not the openwrt
+	# tree's package/ dir, and nothing else copies it, so make
+	# defconfig silently dropped CONFIG_PACKAGE_luci-app-totp and
+	# every build so far shipped without TOTP (found 2026-11-18).
+	# Gated on the package being selected, not on the target.
+	if grep -q "^CONFIG_PACKAGE_luci-app-totp=y" .config 2>/dev/null; then
 	cp -a $GITHUB_WORKSPACE/package/luci-app-totp package/luci-app-totp
 	[ -d package/luci-app-totp ] || { echo "ERROR: vendored luci-app-totp missing from tree"; exit 1; }
 	fi
 
-	# Defensive: official 25.12 feeds ship no daed, but drop any feed copy
-	# if one ever appears, so the pinned kenzok8 copy is the only one.
-	rm -rf feeds/packages/net/daed feeds/luci/applications/luci-app-daed
-
-	# daed (dae + wing) + luci-app-daede UI -- kenzok8, pinned 2026-11-19 (daed 2026.11.18)
-	# (switched from QiuSimons after runs 2-5 died in its Build/Prepare:
-	# ';'-chained pnpm web build, then missing system Go for go get).
-	# kenzok8's daed/Makefile Prepare only unpacks a CI prebuilt tarball
-	# (PKG_VERSION 2026.11.18, PKG_HASH ae3f66c6...), no go get / pnpm.
-	git clone https://github.com/kenzok8/openwrt-daede /tmp/daed-src
-	git -C /tmp/daed-src checkout 519c19312c8719513cf8a07f390ae2a273039eaa
-	cp -a /tmp/daed-src/daed package/daed
-	cp -a /tmp/daed-src/luci-app-daede package/luci-app-daede
-	# luci-app-daede/Makefile:83 installs ../dae/files/dae.config (run 8
-	# died on its absence); kenzok8 ships a dae/ dir -- copy it too.
-	# Config does not select dae, so it is not built, only referenced.
-	cp -a /tmp/daed-src/dae package/dae
-	# Fallback only: kenzok8 also ships a vmlinux-btf/ dir, never copied.
-	# With kernel BTF enabled (Configs/x86_64) daed's choice stays on the
-	# integrated path and this package is not built; it only covers the
-	# case where the choice falls to DAED_USE_VMLINUX_BTF.
-	cp -a /tmp/daed-src/vmlinux-btf package/vmlinux-btf
-	# kenzok8 519c193 (daed 2026.11.18) Build/Prepare hard-requires
-	# package/ci/patches/dae-core/0001-keep-protocol-wrappers-in-tcp-relay.patch
-	# (DAE_CORE_PATCH_DIR is $(CURDIR)/../ci/patches/dae-core; the
-	# '@test -s' guard fails silently -- run 44650072855 died there
-	# with no tar error, only make Error 1). The old pin 1eedcafd
-	# (2026.10.30) had no such requirement, which is why earlier
-	# runs passed. Copy only the patches subtree, not the whole ci/.
-	mkdir -p package/ci
-	cp -a /tmp/daed-src/ci/patches package/ci/patches
-	[ -s package/ci/patches/dae-core/0001-keep-protocol-wrappers-in-tcp-relay.patch ] || { echo "ERROR: daed dae-core patch missing from kenzok8 clone"; exit 1; }
-
-	# daed 2026.11.18 requires Go >= 1.27, but the 25.12 feed default is
-	# 1.26 (run 6 died on 'go.mod requires go >= 1.27.0'). Point only
-	# daed at the feed's versioned 1.27 host toolchain; everything else
-	# keeps the default 1.26 it already built fine with in run 6.
-	sed -i 's/^PKG_BUILD_DEPENDS:=golang\/host /PKG_BUILD_DEPENDS:=golang1.27\/host /' package/daed/Makefile
+	# 2026-11-21: AX6000 dropped daed (user decision); only clone/build
+	# it when the config selects it. x86_64 and xiaomi_ax6000 (25.12)
+	# still select daed and are unaffected.
+	if grep -q "^CONFIG_PACKAGE_daed=y" .config 2>/dev/null; then
+		# Defensive: official 25.12 feeds ship no daed, but drop any feed copy
+		# if one ever appears, so the pinned kenzok8 copy is the only one.
+		rm -rf feeds/packages/net/daed feeds/luci/applications/luci-app-daed
+	
+		# daed (dae + wing) + luci-app-daede UI -- kenzok8, pinned 2026-11-19 (daed 2026.11.18)
+		# (switched from QiuSimons after runs 2-5 died in its Build/Prepare:
+		# ';'-chained pnpm web build, then missing system Go for go get).
+		# kenzok8's daed/Makefile Prepare only unpacks a CI prebuilt tarball
+		# (PKG_VERSION 2026.11.18, PKG_HASH ae3f66c6...), no go get / pnpm.
+		git clone https://github.com/kenzok8/openwrt-daede /tmp/daed-src
+		git -C /tmp/daed-src checkout 519c19312c8719513cf8a07f390ae2a273039eaa
+		cp -a /tmp/daed-src/daed package/daed
+		cp -a /tmp/daed-src/luci-app-daede package/luci-app-daede
+		# luci-app-daede/Makefile:83 installs ../dae/files/dae.config (run 8
+		# died on its absence); kenzok8 ships a dae/ dir -- copy it too.
+		# Config does not select dae, so it is not built, only referenced.
+		cp -a /tmp/daed-src/dae package/dae
+		# Fallback only: kenzok8 also ships a vmlinux-btf/ dir, never copied.
+		# With kernel BTF enabled (Configs/x86_64) daed's choice stays on the
+		# integrated path and this package is not built; it only covers the
+		# case where the choice falls to DAED_USE_VMLINUX_BTF.
+		cp -a /tmp/daed-src/vmlinux-btf package/vmlinux-btf
+		# kenzok8 519c193 (daed 2026.11.18) Build/Prepare hard-requires
+		# package/ci/patches/dae-core/0001-keep-protocol-wrappers-in-tcp-relay.patch
+		# (DAE_CORE_PATCH_DIR is $(CURDIR)/../ci/patches/dae-core; the
+		# '@test -s' guard fails silently -- run 44650072855 died there
+		# with no tar error, only make Error 1). The old pin 1eedcafd
+		# (2026.10.30) had no such requirement, which is why earlier
+		# runs passed. Copy only the patches subtree, not the whole ci/.
+		mkdir -p package/ci
+		cp -a /tmp/daed-src/ci/patches package/ci/patches
+		[ -s package/ci/patches/dae-core/0001-keep-protocol-wrappers-in-tcp-relay.patch ] || { echo "ERROR: daed dae-core patch missing from kenzok8 clone"; exit 1; }
+	
+		# daed 2026.11.18 requires Go >= 1.27, but the 25.12 feed default is
+		# 1.26 (run 6 died on 'go.mod requires go >= 1.27.0'). Point only
+		# daed at the feed's versioned 1.27 host toolchain; everything else
+		# keeps the default 1.26 it already built fine with in run 6.
+		sed -i 's/^PKG_BUILD_DEPENDS:=golang\/host /PKG_BUILD_DEPENDS:=golang1.27\/host /' package/daed/Makefile
+	fi # end daed (config-gated)
 
 	# NOTE (2026-11-02, kenzok8 switch): the old fork-local fail-fast patch
 	# (Scripts/patch_daed_makefile.py) is NOT applied here -- its anchors
@@ -324,28 +328,36 @@ PYEOF
 	# No credentials here: the LED scripts only write LED brightness
 	# nodes, the crontab only schedules them, 99-set-timezone only
 	# sets timezone/zonename, and 99-firstboot-init only applies the
-	# production LAN (192.168.2.209) + hostname + open WiFi when the
-	# LAN is still the build default (factory state); it exits without
+	# production LAN (192.168.2.5) + hostname when the LAN is still
+	# the build default (factory state); it exits without
 	# touching anything when settings were preserved. x86_64 (main
 	# router) has no such LED nodes and its timezone is already set
 	# via config, so this whole block is skipped there to keep the
 	# image identical to the current one.
 	# Fail fast if any vendored file is missing or its content drifts.
 	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
-	mkdir -p files/root files/etc/crontabs files/etc/uci-defaults
+	mkdir -p files/root files/etc/crontabs files/etc/uci-defaults files/etc/config files/usr/share/pbr
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/root/led-night.sh" files/root/led-night.sh
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/root/led-day.sh" files/root/led-day.sh
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/crontabs/root" files/etc/crontabs/root
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/uci-defaults/99-set-timezone" files/etc/uci-defaults/99-set-timezone
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/uci-defaults/99-firstboot-init" files/etc/uci-defaults/99-firstboot-init
-	chmod 755 files/root/led-night.sh files/root/led-day.sh files/etc/uci-defaults/99-set-timezone files/etc/uci-defaults/99-firstboot-init
-	for f in root/led-night.sh root/led-day.sh etc/crontabs/root etc/uci-defaults/99-set-timezone etc/uci-defaults/99-firstboot-init; do
+	# Static wireless (psk2, NO key -- password entered in LuCI after flashing),
+	# disabled-by-default WARP WireGuard interface, and pbr split-tunnel
+	# config + China-list user file (all added 2026-11-21, user decision).
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/config/wireless" files/etc/config/wireless
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/uci-defaults/99-wireguard-warp" files/etc/uci-defaults/99-wireguard-warp
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/config/pbr" files/etc/config/pbr
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/usr/share/pbr/pbr.user.china.uc" files/usr/share/pbr/pbr.user.china.uc
+	chmod 755 files/root/led-night.sh files/root/led-day.sh files/etc/uci-defaults/99-set-timezone files/etc/uci-defaults/99-firstboot-init files/etc/uci-defaults/99-wireguard-warp
+	for f in root/led-night.sh root/led-day.sh etc/crontabs/root etc/uci-defaults/99-set-timezone etc/uci-defaults/99-firstboot-init etc/config/wireless etc/uci-defaults/99-wireguard-warp etc/config/pbr usr/share/pbr/pbr.user.china.uc; do
 		[ -f "files/$f" ] || { echo "ERROR: LED/timezone overlay missing from tree files/: $f"; exit 1; }
 	done
 	[ -x files/root/led-night.sh ] || { echo "ERROR: led-night.sh not executable in tree files/"; exit 1; }
 	[ -x files/root/led-day.sh ] || { echo "ERROR: led-day.sh not executable in tree files/"; exit 1; }
 	[ -x files/etc/uci-defaults/99-set-timezone ] || { echo "ERROR: 99-set-timezone not executable in tree files/"; exit 1; }
 	[ -x files/etc/uci-defaults/99-firstboot-init ] || { echo "ERROR: 99-firstboot-init not executable in tree files/"; exit 1; }
+	[ -x files/etc/uci-defaults/99-wireguard-warp ] || { echo "ERROR: 99-wireguard-warp not executable in tree files/"; exit 1; }
 	[ "$(wc -l < files/root/led-night.sh)" -eq 7 ] || { echo "ERROR: led-night.sh line count changed (expected 7)"; exit 1; }
 	[ "$(wc -l < files/root/led-day.sh)" -eq 2 ] || { echo "ERROR: led-day.sh line count changed (expected 2)"; exit 1; }
 	[ "$(wc -l < files/etc/crontabs/root)" -eq 2 ] || { echo "ERROR: crontab line count changed (expected 2)"; exit 1; }
@@ -356,12 +368,24 @@ PYEOF
 	grep -q "timezone='CST-8'" files/etc/uci-defaults/99-set-timezone || { echo "ERROR: timezone script missing CST-8"; exit 1; }
 	grep -q "zonename='Asia/Shanghai'" files/etc/uci-defaults/99-set-timezone || { echo "ERROR: timezone script missing Asia/Shanghai"; exit 1; }
 	grep -q "uci commit system" files/etc/uci-defaults/99-set-timezone || { echo "ERROR: timezone script missing uci commit"; exit 1; }
-	grep -q "192.168.2.209" files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init missing production LAN 192.168.2.209"; exit 1; }
+	grep -q "192.168.2.5" files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init missing production LAN 192.168.2.5"; exit 1; }
+	! grep -q "192.168.2.209" files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init still contains old LAN 192.168.2.209"; exit 1; }
 	grep -q "hostname='ax6000'" files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init missing hostname ax6000"; exit 1; }
-	grep -q "ssid='AX6000'" files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init missing open SSID AX6000"; exit 1; }
-	grep -q "encryption='none'" files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init missing open encryption none"; exit 1; }
 	grep -Fq '"$LAN_IP" = "192.168.2.1"' files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init missing factory-state guard (LAN 192.168.2.1)"; exit 1; }
-	echo "LED/timezone overlay check OK: 5 files in tree files/, scripts executable, content verified"
+	# Static wireless: SSIDs 5G/2.4G/5G, channels 36/1/36, psk2, NO key line.
+	grep -q "option ssid '5G'" files/etc/config/wireless || { echo "ERROR: wireless missing SSID 5G"; exit 1; }
+	grep -q "option ssid '2.4G'" files/etc/config/wireless || { echo "ERROR: wireless missing SSID 2.4G"; exit 1; }
+	grep -q "option encryption 'psk2'" files/etc/config/wireless || { echo "ERROR: wireless missing psk2"; exit 1; }
+	! grep -q "option key" files/etc/config/wireless || { echo "ERROR: wireless contains a key line (password must never enter firmware)"; exit 1; }
+	# WARP interface: disabled by default, no default route via WG.
+	grep -q "network.warp.disabled='1'" files/etc/uci-defaults/99-wireguard-warp || { echo "ERROR: 99-wireguard-warp missing disabled=1"; exit 1; }
+	grep -q "route_allowed_ips='0'" files/etc/uci-defaults/99-wireguard-warp || { echo "ERROR: 99-wireguard-warp missing route_allowed_ips=0"; exit 1; }
+	grep -q "network.warp_peer=wireguard_warp" files/etc/uci-defaults/99-wireguard-warp || { echo "ERROR: 99-wireguard-warp missing warp peer section"; exit 1; }
+	# pbr split tunnel: China direct via wan, foreign via warp.
+	grep -q "option interface 'warp'" files/etc/config/pbr || { echo "ERROR: pbr config missing warp policy"; exit 1; }
+	grep -q "pbr.user.china.uc" files/etc/config/pbr || { echo "ERROR: pbr config missing China user file include"; exit 1; }
+	grep -q "china_ip_list" files/usr/share/pbr/pbr.user.china.uc || { echo "ERROR: pbr.user.china.uc missing China list URL"; exit 1; }
+	echo "LED/timezone overlay check OK: 9 files in tree files/, scripts executable, content verified"
 	fi # end AX6000-only LED/timezone overlay
 
 	# OpenClash Meta core (2026-11-19, user decision) -- AX6000
@@ -371,7 +395,8 @@ PYEOF
 	# (pinned release, hash-verified) into the tree files/ overlay
 	# at the path OpenClash expects (/etc/openclash/core/clash_meta,
 	# per luci-app-openclash openclash_core.sh: meta_core_path).
-	# Source: MetaCubeX/mihomo v1.19.34 linux-arm64. The binary is
+	# Source: MetaCubeX/mihomo Prerelease-Alpha 100ff73 linux-arm64.
+	# (Updated 2026-11-21 from v1.19.34; same 57,344,126 B size.) The binary is
 	# NOT vendored in the repo (57M is too large for the git-data API
 	# push; it is fetched here like the other externals). Fail fast
 	# if the download, the .gz hash, the size, the arch, or the
@@ -386,17 +411,17 @@ PYEOF
 	# first run (as the current production firmware does).
 	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
 	mkdir -p files/etc/openclash/core
-	MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/v1.19.34/mihomo-linux-arm64-v1.19.34.gz"
-	MIHOMO_GZ_SHA256="daaf78a6240a282cdfd75bcbf98fe321f6bd52765cc29e79f344191198f0b50f"
-	curl -fsSL -o mihomo-linux-arm64-v1.19.34.gz "$MIHOMO_URL" || { echo "ERROR: mihomo download failed"; exit 1; }
-	echo "$MIHOMO_GZ_SHA256  mihomo-linux-arm64-v1.19.34.gz" | sha256sum -c - || { echo "ERROR: mihomo .gz SHA256 mismatch"; exit 1; }
-	gzip -dc mihomo-linux-arm64-v1.19.34.gz > files/etc/openclash/core/clash_meta || { echo "ERROR: mihomo gunzip failed"; exit 1; }
+	MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/Prerelease-Alpha/mihomo-linux-arm64-alpha-100ff73.gz"
+	MIHOMO_GZ_SHA256="8e5dc782ce5a64a59584c31fde53168004889c99ec40e19758e2e9ad73b03f65"
+	curl -fsSL -o mihomo-linux-arm64-alpha-100ff73.gz "$MIHOMO_URL" || { echo "ERROR: mihomo download failed"; exit 1; }
+	echo "$MIHOMO_GZ_SHA256  mihomo-linux-arm64-alpha-100ff73.gz" | sha256sum -c - || { echo "ERROR: mihomo .gz SHA256 mismatch"; exit 1; }
+	gzip -dc mihomo-linux-arm64-alpha-100ff73.gz > files/etc/openclash/core/clash_meta || { echo "ERROR: mihomo gunzip failed"; exit 1; }
 	chmod 755 files/etc/openclash/core/clash_meta
-	rm -f mihomo-linux-arm64-v1.19.34.gz
+	rm -f mihomo-linux-arm64-alpha-100ff73.gz
 	[ -f files/etc/openclash/core/clash_meta ] || { echo "ERROR: clash_meta missing from tree files/"; exit 1; }
 	[ -x files/etc/openclash/core/clash_meta ] || { echo "ERROR: clash_meta not executable in tree files/"; exit 1; }
 	[ "$(wc -c < files/etc/openclash/core/clash_meta)" -eq 57344126 ] || { echo "ERROR: clash_meta size changed (expected 57344126)"; exit 1; }
-	echo "022da41e03ce70641a2f50c485b4f69ade8f1c7aeeece2cf1ec45c614a029441  files/etc/openclash/core/clash_meta" | sha256sum -c - || { echo "ERROR: clash_meta SHA256 mismatch"; exit 1; }
+	echo "aa782da8db1236f0253cd34b87c5a95c833fe4c6f308053cb83fcb62d059efba  files/etc/openclash/core/clash_meta" | sha256sum -c - || { echo "ERROR: clash_meta SHA256 mismatch"; exit 1; }
 	file files/etc/openclash/core/clash_meta | grep -q "ARM aarch64" || { echo "ERROR: clash_meta is not ARM aarch64 ELF"; exit 1; }
 	file files/etc/openclash/core/clash_meta | grep -q "ELF 64-bit" || { echo "ERROR: clash_meta is not 64-bit ELF"; exit 1; }
 	echo "Meta core check OK: clash_meta 57344126 B, aarch64 ELF, SHA256 verified"

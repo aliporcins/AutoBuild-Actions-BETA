@@ -1,0 +1,41 @@
+#!/bin/sh
+# First-boot WireGuard (Cloudflare WARP) interface for Xiaomi AX6000 -- 2026-11-21.
+# Runs once via /etc/uci-defaults on first boot. Idempotent: exits if the
+# 'warp' interface already exists. Only ever ADDS the warp interface +
+# its peer; never touches lan/wan.
+#
+# SECURITY WARNING (read before flashing): the private key below belongs
+# to a fresh FREE WARP account created for this device only (no payment,
+# no personal data attached). It is baked into the firmware image and
+# committed to the public repo, so anyone who downloads the image or
+# reads the repo can extract it. That is the user's explicit decision
+# (2026-11-21: bake the interface). If the key is ever abused, delete
+# the account and rotate: generate a new wgcf profile and rebuild.
+#
+# The interface is created DISABLED (option disabled '1'): nothing
+# uses it until the user enables it in LuCI (Network -> Interfaces ->
+# warp -> Enable). The peer has route_allowed_ips '0', so even when
+# enabled it installs NO default route -- split routing is done by
+# pbr (/etc/config/pbr): China direct via wan, foreign via warp.
+uci show network.warp >/dev/null 2>&1 && exit 0
+
+uci set network.warp=interface
+uci set network.warp.proto='wireguard'
+uci set network.warp.private_key='iJkrusfOfoQmdA2MXvXZRgpjc1GB/4Jv8b/IkZFFO0w='
+uci add_list network.warp.addresses='172.16.0.2/32'
+uci add_list network.warp.addresses='2606:4700:110:8bb1:b33c:ff77:a4a9:4687/128'
+uci set network.warp.mtu='1280'
+uci set network.warp.dns='1.1.1.1'
+uci set network.warp.disabled='1'
+
+uci set network.warp_peer=wireguard_warp
+uci set network.warp_peer.public_key='bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo='
+uci set network.warp_peer.endpoint_host='engage.cloudflareclient.com'
+uci set network.warp_peer.endpoint_port='2408'
+uci set network.warp_peer.persistent_keepalive='25'
+uci add_list network.warp_peer.allowed_ips='0.0.0.0/0'
+uci add_list network.warp_peer.allowed_ips='::/0'
+uci set network.warp_peer.route_allowed_ips='0'
+
+uci commit network
+exit 0
