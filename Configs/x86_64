@@ -98,6 +98,13 @@ CONFIG_PACKAGE_luci-app-wol=y
 CONFIG_PACKAGE_daed=y
 CONFIG_PACKAGE_luci-app-daede=y
 CONFIG_PACKAGE_luci-app-openclash=y
+# pbr split tunnel (2026-11-21, main-router next build): baked in for the
+# WARP split tunnel (China direct via wan, foreign via warp). Previously
+# installed post-flash via apk; baking it in means the nft-cleanup fix
+# in DiyScript applies and the package survives a reflash.
+CONFIG_PACKAGE_pbr=y
+CONFIG_PACKAGE_luci-app-pbr=y
+CONFIG_PACKAGE_luci-i18n-pbr-zh-cn=y
 CONFIG_PACKAGE_luci-app-lucky=y
 CONFIG_PACKAGE_lucky=y
 CONFIG_PACKAGE_luci-app-diskman=y

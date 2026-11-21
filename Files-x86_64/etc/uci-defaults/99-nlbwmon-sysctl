@@ -1,0 +1,17 @@
+#!/bin/sh
+# 99-nlbwmon-sysctl -- set net.core.rmem_max for nlbwmon (2026-11-21).
+# nlbwmon requests a 2MB netlink receive buffer (-b 2097152), but the
+# kernel default rmem_max is 212992, so the buffer is capped at ~208KB
+# and nlbwmon logs "Netlink receive failure: Out of memory" every
+# minute under load. Raising rmem_max to 2097152 fixes it (verified on
+# the live main router 2026-11-21: 3 minutes with zero errors after
+# the change, vs. one error per minute before). This script persists
+# the value into /etc/sysctl.conf (so it survives reboots) and applies
+# it immediately. uci-defaults deletes this script after it runs once.
+if grep -q "^net.core.rmem_max" /etc/sysctl.conf 2>/dev/null; then
+	sed -i "s/^net.core.rmem_max.*/net.core.rmem_max=2097152/" /etc/sysctl.conf
+else
+	echo "net.core.rmem_max=2097152" >> /etc/sysctl.conf
+fi
+sysctl -w net.core.rmem_max=2097152 >/dev/null 2>&1
+exit 0

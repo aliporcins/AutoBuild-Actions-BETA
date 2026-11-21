@@ -297,8 +297,8 @@ jobs:
           luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
           luci-i18n-ddns-zh-cn luci-i18n-filemanager-zh-cn luci-i18n-nlbwmon-zh-cn \
           luci-i18n-package-manager-zh-cn luci-i18n-ttyd-zh-cn luci-i18n-upnp-zh-cn \
-          luci-i18n-wol-zh-cn luci-i18n-cloudflared-zh-cn \
-          nlbwmon luci-app-nlbwmon \
+          luci-i18n-wol-zh-cn luci-i18n-cloudflared-zh-cn luci-i18n-pbr-zh-cn \
+          nlbwmon luci-app-nlbwmon pbr luci-app-pbr \
           luci-app-totp daed luci-app-daede luci-app-lucky lucky \
           luci-app-openclash luci-app-diskman luci-app-ramfree luci-app-autoreboot \
           etherwake luci-app-wol cloudflared; do

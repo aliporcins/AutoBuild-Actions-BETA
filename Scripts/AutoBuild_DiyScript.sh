@@ -405,4 +405,95 @@ PYEOF
 	file files/etc/openclash/core/clash_meta | grep -q "ELF 64-bit" || { echo "ERROR: clash_meta is not 64-bit ELF"; exit 1; }
 	echo "Meta core check OK: clash_meta 57344126 B, aarch64 ELF, SHA256 verified"
 	fi # end AX6000-only mihomo arm64 core
+
+	# pbr stop/start nft residue fix (2026-11-21, main-router next build).
+	# ROOT CAUSE (verified on the live main router 2026-11-21): pbr
+	# 1.2.2's stop_service() only deletes the ruleset file
+	# (/usr/share/nftables.d/ruleset-post/30-pbr.nft) and cleans the
+	# ip rules/routing tables -- it leaves the LIVE pbr chains, mark
+	# chains and sets in the fw4 table. The next start's `nft -c -f`
+	# validation then fails on `add chain` (chain already exists), so
+	# a stop/start cycle used to require a full reboot (14:57 restart
+	# hung 8 min and was killed; LuCI stop/start only recovered after
+	# a whole-router reboot). Fix: on stop, flush/delete the live nft
+	# objects AND reload fw4 (the file is gone, so fw4 rebuilds the
+	# tables without any pbr state); on start, also clean the marking
+	# chains before rebuilding. Gated on pbr being selected, and the
+	# patch fails fast if upstream pbr changes the anchor lines.
+	if grep -q "^CONFIG_PACKAGE_pbr=y" .config 2>/dev/null; then
+	PBR_INIT="feeds/packages/net/pbr/files/etc/init.d/pbr"
+	[ -f "$PBR_INIT" ] || { echo "ERROR: pbr init script missing from feeds: $PBR_INIT"; exit 1; }
+	python3 - "$PBR_INIT" <<'PYEOF'
+import sys
+path = sys.argv[1]
+src = open(path).read()
+# Patch A (stop_service): extend cleanup to the live nft objects.
+old_a = "\tif nft_file 'delete' 'main' && \\\n\t\tcleanup 'main_table' 'rt_tables' && \\\n\t\tip route flush cache; then\n\t\toutput_okn\n\telse\n\t\toutput_failn\n\tfi\n\tunset ifaceMark"
+new_a = "\tif nft_file 'delete' 'main' && \\\n\t\tcleanup 'main_table' 'rt_tables' 'main_chains' 'marking_chains' 'sets' && \\\n\t\tip route flush cache; then\n\t\toutput_okn\n\telse\n\t\toutput_failn\n\tfi\n\t# The ruleset file is gone, so a fw4 reload rebuilds the tables\n\t# without any pbr chains/sets/jump rules. Without this, the live\n\t# pbr chains survive the stop and the next start's `nft -c -f`\n\t# validation fails on `add chain` (chain already exists) -- this\n\t# is why a stop/start cycle used to require a full reboot.\n\t# (2026-11-21: pbr stop/start nft residue root cause.)\n\t! nft_file 'exists' 'main' && fw4 -q reload >/dev/null 2>&1\n\tunset ifaceMark"
+assert src.count(old_a) == 1, 'pbr stop_service anchor not found exactly once (upstream changed?)'
+src = src.replace(old_a, new_a)
+# Patch B (start_service on_start/on_reload): also clean marking chains.
+old_b = "\t\t\tcleanup 'main_table' 'rt_tables' 'main_chains' 'sets'"
+new_b = "\t\t\tcleanup 'main_table' 'rt_tables' 'main_chains' 'marking_chains' 'sets'"
+assert src.count(old_b) == 1, 'pbr start_service anchor not found exactly once (upstream changed?)'
+src = src.replace(old_b, new_b)
+open(path, 'w').write(src)
+print('pbr init patch OK: stop flushes nft objects + fw4 reload, start cleans marking chains')
+PYEOF
+	grep -q "cleanup 'main_table' 'rt_tables' 'main_chains' 'marking_chains' 'sets'" "$PBR_INIT" || { echo "ERROR: pbr init patch did not apply (stop)"; exit 1; }
+	grep -q "! nft_file 'exists' 'main' && fw4 -q reload" "$PBR_INIT" || { echo "ERROR: pbr init patch did not apply (fw4 reload)"; exit 1; }
+	sh -n "$PBR_INIT" || { echo "ERROR: patched pbr init fails shell syntax check"; exit 1; }
+	echo "pbr nft cleanup check OK: init patched, syntax valid"
+	fi # end pbr nft cleanup fix
+
+	# nlbwmon rmem_max (2026-11-21, main-router next build) -- x86_64
+	# ONLY. Bake the sysctl fix into the image via a uci-defaults
+	# script (same method as the live-router runtime fix, which was
+	# verified 2026-11-21: 3 minutes with zero errors after the
+	# change). Without this, a reflash loses the runtime fix in
+	# /etc/sysctl.conf and nlbwmon goes back to logging
+	# "Netlink receive failure: Out of memory" every minute.
+	if grep -q "^CONFIG_TARGET_x86_64=y" .config 2>/dev/null; then
+	mkdir -p files/etc/uci-defaults
+	cp -a "$GITHUB_WORKSPACE/Files-x86_64/etc/uci-defaults/99-nlbwmon-sysctl" files/etc/uci-defaults/99-nlbwmon-sysctl
+	[ -f files/etc/uci-defaults/99-nlbwmon-sysctl ] || { echo "ERROR: 99-nlbwmon-sysctl missing from tree files/"; exit 1; }
+	chmod 755 files/etc/uci-defaults/99-nlbwmon-sysctl
+	[ -x files/etc/uci-defaults/99-nlbwmon-sysctl ] || { echo "ERROR: 99-nlbwmon-sysctl not executable in tree files/"; exit 1; }
+	grep -q "net.core.rmem_max=2097152" files/etc/uci-defaults/99-nlbwmon-sysctl || { echo "ERROR: 99-nlbwmon-sysctl missing rmem_max=2097152"; exit 1; }
+	sh -n files/etc/uci-defaults/99-nlbwmon-sysctl || { echo "ERROR: 99-nlbwmon-sysctl fails shell syntax check"; exit 1; }
+	echo "nlbwmon sysctl check OK: 99-nlbwmon-sysctl in tree files/, executable, rmem_max=2097152"
+	fi # end x86_64-only nlbwmon sysctl
+
+	# OpenClash Meta core (2026-11-21, main-router next build) -- x86_64
+	# (amd64) ONLY. Same role as the AX6000 arm64 block above, but the
+	# amd64 binary (the arm64 binary cannot run on x86_64). Bake the
+	# mihomo binary into the image so OpenClash works out of the box
+	# instead of downloading the core on first run (the current
+	# production firmware has alpha-gbc76c13, 16,021,484 B, fetched by
+	# the panel; this build moves to the latest Prerelease-Alpha).
+	# Source: MetaCubeX/mihomo Prerelease-Alpha 100ff73 linux-amd64.
+	# The binary is NOT vendored in the repo (62M is too large for the
+	# git-data API push; it is fetched here like the other externals).
+	# Fail fast if the download, the .gz hash, the size, the arch, or
+	# the binary hash does not match. Space: x86_64 rootfs is 1024M,
+	# the 62M binary xz-compresses to ~14M, so it fits easily.
+	# Gated on x86_64 specifically (NOT merely "not qualcommax", so
+	# no ARM target gets an amd64 binary by mistake).
+	if grep -q "^CONFIG_TARGET_x86_64=y" .config 2>/dev/null; then
+	mkdir -p files/etc/openclash/core
+	MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/Prerelease-Alpha/mihomo-linux-amd64-alpha-100ff73.gz"
+	MIHOMO_GZ_SHA256="a7b29487a5c68404e3e89e8d9634700d24415c0f0381eda6aa53363600aa2d32"
+	curl -fsSL -o mihomo-linux-amd64-alpha-100ff73.gz "$MIHOMO_URL" || { echo "ERROR: mihomo amd64 download failed"; exit 1; }
+	echo "$MIHOMO_GZ_SHA256  mihomo-linux-amd64-alpha-100ff73.gz" | sha256sum -c - || { echo "ERROR: mihomo amd64 .gz SHA256 mismatch"; exit 1; }
+	gzip -dc mihomo-linux-amd64-alpha-100ff73.gz > files/etc/openclash/core/clash_meta || { echo "ERROR: mihomo amd64 gunzip failed"; exit 1; }
+	chmod 755 files/etc/openclash/core/clash_meta
+	rm -f mihomo-linux-amd64-alpha-100ff73.gz
+	[ -f files/etc/openclash/core/clash_meta ] || { echo "ERROR: clash_meta amd64 missing from tree files/"; exit 1; }
+	[ -x files/etc/openclash/core/clash_meta ] || { echo "ERROR: clash_meta amd64 not executable in tree files/"; exit 1; }
+	[ "$(wc -c < files/etc/openclash/core/clash_meta)" -eq 61890686 ] || { echo "ERROR: clash_meta amd64 size changed (expected 61890686)"; exit 1; }
+	echo "ffc9faaf465d2a6ce4c2672bc782de7c1be87bb0bf5836d167c28c163d4dcca8  files/etc/openclash/core/clash_meta" | sha256sum -c - || { echo "ERROR: clash_meta amd64 SHA256 mismatch"; exit 1; }
+	file files/etc/openclash/core/clash_meta | grep -q "x86-64" || { echo "ERROR: clash_meta amd64 is not x86-64 ELF"; exit 1; }
+	file files/etc/openclash/core/clash_meta | grep -q "ELF 64-bit" || { echo "ERROR: clash_meta amd64 is not 64-bit ELF"; exit 1; }
+	echo "Meta core amd64 check OK: clash_meta 61890686 B, x86-64 ELF, SHA256 verified"
+	fi # end x86_64-only mihomo amd64 core
 }
