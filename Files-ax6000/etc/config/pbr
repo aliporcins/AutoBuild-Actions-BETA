@@ -3,13 +3,13 @@
 # WireGuard interface (Cloudflare WARP, created disabled by
 # 99-wireguard-warp; user enables it in LuCI when wanted).
 #
-# How it works (pbr 1.2.x, nft-based; upstream dropped ipset support,
-# so the "China address set" is an nft set, not an ipset):
-#  - /usr/share/pbr/pbr.user.china.uc (enabled below) downloads the
-#    China IPv4 list and fills pbr's per-interface user set
-#    pbr_wan_4_dst_ip_user. pbr emits that set's match rule in
-#    pbr_prerouting ahead of the policy rules, so China destinations
-#    are marked for the wan table first.
+# How it works (pbr 1.2.2, nft-based shell implementation; upstream
+# dropped ipset support, so the "China address set" is an nft set):
+#  - /usr/share/pbr/pbr.user.china (enabled below, a SHELL script --
+#    .uc only works on pbr 1.2.3+) downloads the China IPv4 list and
+#    fills pbr's per-interface user set pbr_wan_4_dst_ip_user. pbr
+#    emits that set's match rule in pbr_prerouting ahead of the
+#    policy rules, so China destinations are marked for wan first.
 #  - The catch-all policy below then sends everything else via warp.
 #  - No 0.0.0.0/0 default route is ever pointed at WG (the warp peer
 #    has route_allowed_ips '0'); only pbr-marked traffic uses it.
@@ -32,7 +32,7 @@ config pbr 'config'
 	list ignored_interface 'loopback'
 
 config include
-	option path '/usr/share/pbr/pbr.user.china.uc'
+	option path '/usr/share/pbr/pbr.user.china'
 	option enabled '1'
 
 config policy

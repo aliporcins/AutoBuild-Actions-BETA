@@ -325,9 +325,9 @@ PYEOF
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/config/wireless" files/etc/config/wireless
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/uci-defaults/99-wireguard-warp" files/etc/uci-defaults/99-wireguard-warp
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/config/pbr" files/etc/config/pbr
-	cp -a "$GITHUB_WORKSPACE/Files-ax6000/usr/share/pbr/pbr.user.china.uc" files/usr/share/pbr/pbr.user.china.uc
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/usr/share/pbr/pbr.user.china" files/usr/share/pbr/pbr.user.china
 	chmod 755 files/root/led-night.sh files/root/led-day.sh files/etc/uci-defaults/99-set-timezone files/etc/uci-defaults/99-firstboot-init files/etc/uci-defaults/99-wireguard-warp
-	for f in root/led-night.sh root/led-day.sh etc/crontabs/root etc/uci-defaults/99-set-timezone etc/uci-defaults/99-firstboot-init etc/config/wireless etc/uci-defaults/99-wireguard-warp etc/config/pbr usr/share/pbr/pbr.user.china.uc; do
+	for f in root/led-night.sh root/led-day.sh etc/crontabs/root etc/uci-defaults/99-set-timezone etc/uci-defaults/99-firstboot-init etc/config/wireless etc/uci-defaults/99-wireguard-warp etc/config/pbr usr/share/pbr/pbr.user.china; do
 		[ -f "files/$f" ] || { echo "ERROR: LED/timezone overlay missing from tree files/: $f"; exit 1; }
 	done
 	[ -x files/root/led-night.sh ] || { echo "ERROR: led-night.sh not executable in tree files/"; exit 1; }
@@ -360,8 +360,10 @@ PYEOF
 	grep -q "network.warp_peer=wireguard_warp" files/etc/uci-defaults/99-wireguard-warp || { echo "ERROR: 99-wireguard-warp missing warp peer section"; exit 1; }
 	# pbr split tunnel: China direct via wan, foreign via warp.
 	grep -q "option interface 'warp'" files/etc/config/pbr || { echo "ERROR: pbr config missing warp policy"; exit 1; }
-	grep -q "pbr.user.china.uc" files/etc/config/pbr || { echo "ERROR: pbr config missing China user file include"; exit 1; }
-	grep -q "china_ip_list" files/usr/share/pbr/pbr.user.china.uc || { echo "ERROR: pbr.user.china.uc missing China list URL"; exit 1; }
+	grep -q "pbr.user.china" files/etc/config/pbr || { echo "ERROR: pbr config missing China user file include"; exit 1; }
+	! grep -q "pbr.user.china.uc" files/etc/config/pbr || { echo "ERROR: pbr config still references .uc user file (pbr 1.2.2 needs shell script)"; exit 1; }
+	grep -q "china_ip_list" files/usr/share/pbr/pbr.user.china || { echo "ERROR: pbr.user.china missing China list URL"; exit 1; }
+	sh -n files/usr/share/pbr/pbr.user.china || { echo "ERROR: pbr.user.china fails shell syntax check (pbr 1.2.2 sources it with ash)"; exit 1; }
 	echo "LED/timezone overlay check OK: 9 files in tree files/, scripts executable, content verified"
 	fi # end AX6000-only LED/timezone overlay
 
