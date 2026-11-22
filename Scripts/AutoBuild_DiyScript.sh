@@ -410,9 +410,9 @@ PYEOF
 	[ -x files/etc/init.d/sing-box ] || { echo "ERROR: sing-box init not executable in tree files/"; exit 1; }
 	[ "$(stat -c%s files/usr/bin/sing-box)" -eq 76597000 ] || { echo "ERROR: sing-box binary size changed (expected 76597000)"; exit 1; }
 	[ "$(sha256sum files/usr/bin/sing-box | cut -d' ' -f1)" = "1f32fe4525db7b8dad55c9a744167af235e0e527b75221e090cd90d6c6254175" ] || { echo "ERROR: sing-box binary SHA256 mismatch"; exit 1; }
-	[ "$(md5sum files/usr/lib/lua/luci/controller/sing-box.lua | cut -d' ' -f1)" = "2f459976f3236195d6fabf127f71ca23" ] || { echo "ERROR: sing-box controller MD5 mismatch"; exit 1; }
-	[ "$(md5sum files/usr/lib/lua/luci/view/sing-box/sing-box.htm | cut -d' ' -f1)" = "3524a189ebad7bbb33b69652653945cf" ] || { echo "ERROR: sing-box view MD5 mismatch"; exit 1; }
-	[ "$(md5sum files/etc/sing-box/sub-refresh-cron.lua | cut -d' ' -f1)" = "a3849b242711858cca88a91a881291d6" ] || { echo "ERROR: sing-box cron MD5 mismatch"; exit 1; }
+	[ "$(md5sum files/usr/lib/lua/luci/controller/sing-box.lua | cut -d' ' -f1)" = "7472cd81223b59b866f3030444ad1a04" ] || { echo "ERROR: sing-box controller MD5 mismatch"; exit 1; }
+	[ "$(md5sum files/usr/lib/lua/luci/view/sing-box/sing-box.htm | cut -d' ' -f1)" = "48e49fbda199a55fb73ac74b509b709d" ] || { echo "ERROR: sing-box view MD5 mismatch"; exit 1; }
+	[ "$(md5sum files/etc/sing-box/sub-refresh-cron.lua | cut -d' ' -f1)" = "3c9be3940f2b15c2cfcdb56e7baf797b" ] || { echo "ERROR: sing-box cron MD5 mismatch"; exit 1; }
 	python3 -c "import json; json.load(open('files/etc/sing-box/config.json'))" || { echo "ERROR: sing-box starter config is not valid JSON"; exit 1; }
 	! grep -q "private_key\|subscription\|vless\|uuid" files/etc/sing-box/config.json || { echo "ERROR: sing-box starter config contains a secret (must never enter firmware)"; exit 1; }
 	echo "sing-box overlay check OK: 10 files in tree files/, binary 76597000 B SHA256 verified, UI MD5s verified, starter config valid and secret-free"
