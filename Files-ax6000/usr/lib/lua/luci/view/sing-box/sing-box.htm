@@ -254,6 +254,7 @@ local function short_list(prefix, list, max_n)
   return prefix .. " " .. table.concat(shown, ",") .. " 等 " .. table.getn(list) .. " 个"
 end
 local match_text = short_list("来源", r.source_ip_cidr, 5)
+  or short_list("目标 IP", r.ip_cidr, 5)
   or short_list("域名后缀", r.domain_suffix, 5)
   or short_list("域名", r.domain, 5)
   or short_list("域名关键词", r.domain_keyword, 5)
@@ -264,7 +265,7 @@ local match_text = short_list("来源", r.source_ip_cidr, 5)
   or (r.action == "sniff" and "嗅探（sniff）")
   or (r.inbound and ("入站 " .. tostring(r.inbound)))
   or "(其他)"
-local full_text = (r.source_ip_cidr and table.concat(r.source_ip_cidr, ",")) or (r.domain_suffix and table.concat(r.domain_suffix, ",")) or (r.domain and table.concat(r.domain, ",")) or (r.domain_keyword and table.concat(r.domain_keyword, ",")) or ""
+local full_text = (r.source_ip_cidr and table.concat(r.source_ip_cidr, ",")) or (r.ip_cidr and table.concat(r.ip_cidr, ",")) or (r.domain_suffix and table.concat(r.domain_suffix, ",")) or (r.domain and table.concat(r.domain, ",")) or (r.domain_keyword and table.concat(r.domain_keyword, ",")) or ""
 %>
 <span title="<%=pcdata(full_text)%>"><%=pcdata(match_text)%></span>
 </td>
@@ -304,6 +305,7 @@ local full_text = (r.source_ip_cidr and table.concat(r.source_ip_cidr, ",")) or 
 	<option value="domain_suffix">域名后缀（多个用逗号分隔）</option>
 	<option value="domain_keyword">域名关键词（多个用逗号分隔）</option>
 	<option value="source_ip_cidr">来源 IP/CIDR</option>
+	<option value="ip_cidr">目标 IP/CIDR</option>
 	<option value="port">端口</option>
 	<option value="geosite">geosite</option>
 	<option value="geoip">geoip</option>

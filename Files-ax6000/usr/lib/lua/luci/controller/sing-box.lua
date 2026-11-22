@@ -936,6 +936,8 @@ function action()
 					rule.geosite = {value}
 				elseif kind == "geoip" then
 					rule.geoip = {value}
+				elseif kind == "ip_cidr" then
+					rule.ip_cidr = {value}
 				else
 					st.errmsg = "未知匹配类型。"
 					rule = nil
