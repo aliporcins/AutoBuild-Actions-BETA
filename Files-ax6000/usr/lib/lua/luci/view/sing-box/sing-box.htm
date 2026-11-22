@@ -1,0 +1,511 @@
+<%+header%>
+<h2>sing-box</h2>
+<p>sing-box（MASQUE）管理：状态、节点、订阅、分流规则、高级。配置文件保存前会用 sing-box check 校验，校验不通过不写入。</p>
+<% if message and type(message) == "string" and message ~= "" then %><div class="alert-message success"><%=message%></div><% end %>
+<% if errmsg and type(errmsg) == "string" and errmsg ~= "" then %><div class="alert-message error"><%=errmsg%></div><% end %>
+<% if check_output and check_output ~= "" then %><div class="alert-message"><pre><%=pcdata(check_output)%></pre></div><% end %>
+
+<style>
+.sb-tabs { margin: 12px 0; }
+.sb-tabs button { padding: 6px 14px; margin-right: 4px; cursor: pointer; }
+.sb-tabs button.active { font-weight: bold; border-bottom: 2px solid #0069d6; }
+.sb-tab { display: none; }
+.sb-tab.active { display: block; }
+.sb-table { border-collapse: collapse; width: 100%; margin: 8px 0; table-layout: fixed; }
+.sb-table th, .sb-table td { border: 1px solid #555; padding: 4px 8px; text-align: left; vertical-align: top; overflow-wrap: break-word; word-break: break-word; }
+.sb-table th { background: #2f2f2f; color: #e8e8e8; }
+.sb-table tbody tr:hover { background: rgba(0, 105, 214, 0.12); }
+.sb-table .sb-col-num { width: 36px; }
+.sb-table .sb-col-out { width: 110px; }
+.sb-table .sb-col-act { width: 150px; text-align: center; }
+.sb-table .sb-col-act .cbi-button { padding: 2px 6px; margin: 1px; }
+.sb-table .sb-col-sub { width: 70px; }
+.sb-table .sb-col-delay { width: 80px; }
+.sb-table .sb-col-src { width: 22%; }
+.sb-table .sb-col-dst { width: 34%; }
+.sb-table .sb-col-proxy { width: 20%; }
+.sb-table .sb-col-bytes { width: 12%; }
+.sb-protect { color: #ff6b6b; font-weight: bold; }
+.sb-note { color: #999; font-size: 90%; }
+/* 延迟配色：学 LuCI 接口状态盒（绿=好、橙=一般、红=差/不通） */
+.sb-lat-ok { color: #66bb6a; font-weight: bold; }
+.sb-lat-mid { color: #ffa726; font-weight: bold; }
+.sb-lat-bad { color: #ef5350; font-weight: bold; }
+/* 订阅徽章 */
+.sb-sub-fy { color: #64b5f6; font-weight: bold; background: rgba(100,181,246,.15); padding: 1px 6px; border-radius: 3px; }
+.sb-sub-lj { color: #ba68c8; font-weight: bold; background: rgba(186,104,200,.15); padding: 1px 6px; border-radius: 3px; }
+/* 操作列按钮组：单行、不换行、居中 */
+.sb-act-btns { display: flex; gap: 4px; justify-content: center; align-items: center; flex-wrap: nowrap; }
+.sb-act-btns form { display: inline; margin: 0; }
+.sb-act-btns .cbi-button { white-space: nowrap; }
+</style>
+<script>
+function sbTab(id) {
+	var tabs = document.querySelectorAll('.sb-tab');
+	for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
+	document.getElementById('tab-' + id).classList.add('active');
+	var btns = document.querySelectorAll('.sb-tabs button');
+	for (var j = 0; j < btns.length; j++) btns[j].classList.remove('active');
+	document.getElementById('btn-' + id).classList.add('active');
+}
+</script>
+
+<div class="sb-tabs">
+	<button id="btn-status" class="active" onclick="sbTab('status')">状态</button>
+	<button id="btn-nodes" onclick="sbTab('nodes')">节点</button>
+	<button id="btn-subs" onclick="sbTab('subs')">订阅</button>
+	<button id="btn-rules" onclick="sbTab('rules')">分流规则</button>
+	<button id="btn-advanced" onclick="sbTab('advanced')">高级（JSON）</button>
+</div>
+
+<!-- 状态 -->
+<div id="tab-status" class="sb-tab active">
+<h3>状态</h3>
+<div class="cbi-value"><label class="cbi-value-title">版本</label><div class="cbi-value-field"><%=sb_version%></div></div>
+<div class="cbi-value"><label class="cbi-value-title">运行状态</label><div class="cbi-value-field"><% if running then %>运行中（PID <%=pid%><% if uptime ~= "" then %>，已运行 <%=uptime%><% end %>）<% else %>已停止<% end %>
+<% if running then %>
+<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>" style="display:inline">
+	<input type="hidden" name="action" value="stop" />
+	<input type="submit" class="cbi-button" value="停止" />
+</form>
+<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>" style="display:inline">
+	<input type="hidden" name="action" value="restart" />
+	<input type="submit" class="cbi-button" value="重启" />
+</form>
+<% else %>
+<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>" style="display:inline">
+	<input type="hidden" name="action" value="start" />
+	<input type="submit" class="cbi-button cbi-button-apply" value="启动" />
+</form>
+<% end %>
+</div></div>
+<div class="cbi-value"><label class="cbi-value-title">TUN</label><div class="cbi-value-field"><% if tun0 then %>tun0 已建立<% else %>未建立<% end %></div></div>
+<div class="cbi-value"><label class="cbi-value-title">SOCKS 监听</label><div class="cbi-value-field"><% if socks then %>127.0.0.1:1080 在监听<% else %>未监听<% end %></div></div>
+<div class="cbi-value"><label class="cbi-value-title">配置文件</label><div class="cbi-value-field"><%=conffile%></div></div>
+<div class="cbi-value"><label class="cbi-value-title">配置 MD5</label><div class="cbi-value-field"><%=md5%></div></div>
+<div class="cbi-value"><label class="cbi-value-title">配置校验</label><div class="cbi-value-field"><% if check_ok then %>通过<% else %>未通过<% end %></div></div>
+<div class="cbi-value"><label class="cbi-value-title">出站数 / 规则数</label><div class="cbi-value-field"><%=n_out%> / <%=n_rules%></div></div>
+<div class="cbi-value"><label class="cbi-value-title">默认出口</label><div class="cbi-value-field"><%=default_out%></div></div>
+<div class="cbi-value"><label class="cbi-value-title">Google 延迟</label><div class="cbi-value-field" id="lat-google"><% if lat_google ~= "" then %><%=lat_google%> 秒<% else %>—（测速中…）<% end %></div></div>
+<div class="cbi-value"><label class="cbi-value-title">YouTube 延迟</label><div class="cbi-value-field" id="lat-yt"><% if lat_yt ~= "" then %><%=lat_yt%> 秒<% else %>—（测速中…）<% end %></div></div>
+<p><button type="button" class="cbi-button" id="sb-retest-lat" onclick="sbRetestLatency()">重新测速</button> <span class="sb-note">重新测 Google / YouTube 延迟（约几秒到十几秒，测速时按钮不可点）。</span></p>
+<div class="cbi-value"><label class="cbi-value-title">运行用户</label><div class="cbi-value-field"><%=user%></div></div>
+<div class="cbi-value"><label class="cbi-value-title">开机自启</label><div class="cbi-value-field"><form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>" style="display:inline"><input type="hidden" name="action" value="autostart" /><input type="checkbox" name="enabled" value="1" <% if enabled == "1" then %>checked="checked"<% end %> onchange="this.form.submit()" /> <% if enabled == "1" then %>已开启<% else %>已关闭<% end %></form>（勾选即开启，取消即关闭；只改自启，不启停服务）</div></div>
+<p class="sb-note">“启动”会同时打开开机自启；“停止”会同时关闭开机自启。重启约需几秒。</p>
+<p class="sb-note">注意：隧道排除规则（102、VM、Tailscale）是保出口隧道的关键，详见“分流规则”页签里的保护规则，请勿删除。</p>
+
+<h3>分流方案</h3>
+<p class="sb-note">“<%=scheme_a_name%>”：国外流量走 warp-masque（稳定，不依赖订阅）。“<%=scheme_b_name%>”：国外流量走订阅节点（other 组自动选最快），warp-masque 兜底。AI 域名始终走 us 组，国内始终直连，切换只改国外流量这一条。</p>
+<div class="cbi-value"><label class="cbi-value-title">当前方案</label><div class="cbi-value-field"><% if scheme == "b" then %><b><%=scheme_b_name%></b><% elseif scheme == "a" then %><b><%=scheme_a_name%></b><% else %>未知（未找到国外流量规则）<% end %></div></div>
+<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>" style="display:inline">
+	<input type="hidden" name="action" value="scheme" />
+	<input type="hidden" name="name" value="a" />
+	<input type="submit" class="cbi-button" value="切换到<%=scheme_a_name%>" <% if scheme == "a" then %>disabled="disabled"<% end %> />
+</form>
+<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>" style="display:inline">
+	<input type="hidden" name="action" value="scheme" />
+	<input type="hidden" name="name" value="b" />
+	<input type="submit" class="cbi-button cbi-button-apply" value="切换到<%=scheme_b_name%>" <% if scheme == "b" then %>disabled="disabled"<% end %> />
+</form>
+<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>" style="margin-top:8px">
+	<input type="hidden" name="action" value="scheme_rename" />
+	<label>改名：</label>
+	<input type="text" name="scheme_a_name" value="<%=scheme_a_name%>" size="24" />
+	<input type="text" name="scheme_b_name" value="<%=scheme_b_name%>" size="24" />
+	<input type="submit" class="cbi-button" value="保存名称" />
+</form>
+<p class="sb-note">切换后自动校验配置并重启 sing-box（约几秒，期间代理短暂中断）。重启后各组需重新测速（约 1–3 分钟），测速完成前可能走次优节点或兜底，测速中的组显示“测速中…”。改名只改显示，不动规则。</p>
+
+<h3>当前选中节点（各组自动选最快）</h3>
+<p class="sb-note">us 组供 AI 域名用，<% if scheme == "b" then %>其他国外流量走订阅节点（other 组），warp-masque 兜底<% else %>其他国外流量走 warp-masque（默认出口）<% end %>。下表显示每个 urltest 组当前选中的节点。</p>
+<div id="sb-groups">加载中…</div>
+
+<h3>实时连接（按流量倒序，最多 30 条）</h3>
+<p class="sb-note">每条连接的来源 → 目标，以及它走的代理。102（192.168.2.4）应显示 direct。</p>
+<div style="margin:6px 0">
+	<input type="text" id="sb-conn-q" placeholder="搜索：来源 / 目标 / 代理…" oninput="sbFilterConns()" style="width:280px" />
+	<button type="button" class="cbi-button" onclick="sbRefreshTraffic()">刷新</button>
+	<label><input type="checkbox" id="sb-conn-auto" onchange="sbAutoConns(this.checked)" /> 自动刷新（10 秒）</label>
+	<span id="sb-conn-count" class="sb-note"></span>
+</div>
+<div id="sb-conns">加载中…</div>
+</div>
+
+<!-- 节点 -->
+<div id="tab-nodes" class="sb-tab">
+<h3>节点</h3>
+<% if nodes and nodes.nodes then %>
+<p>共 <%=table.getn(nodes.nodes)%> 个节点（<% if nodes.generated_at then %>生成于 <%=nodes.generated_at%><% end %>）。延迟来自 clash_api（服务运行时）或为空。</p>
+<% for _, g in ipairs({"us","hk","jp","tw","sg","other"}) do %>
+<% local gname = ({us="美国",hk="香港",jp="日本",tw="台湾",sg="新加坡",other="其他"})[g] %>
+<% local glist = {} %>
+<% for _, n in ipairs(nodes.nodes) do if n.group == g then glist[#glist + 1] = n end end %>
+<% local gcount = table.getn(glist) %>
+<% if gcount > 0 then %>
+<% table.sort(glist, function(a, b) local la = (clash_lat and clash_lat[a.tag]) or 999999 local lb = (clash_lat and clash_lat[b.tag]) or 999999 return la < lb end) %>
+<h4><%=gname%>（<%=gcount%>）</h4>
+<table class="sb-table" id="sb-nodes-<%=g%>">
+<tr><th>节点</th><th>服务器</th><th>端口</th><th>传输</th><th>安全</th><th>订阅</th><th>延迟</th></tr>
+<% for idx, n in ipairs(glist) do %>
+<tr<% if idx > 5 then %> class="sb-node-extra" style="display:none"<% end %>>
+<td><%=pcdata(n.tag)%></td>
+<td><%=pcdata(n.server)%></td>
+<td><%=n.port%></td>
+<td><%=pcdata(n.transport or "")%></td>
+<td><%=pcdata(n.security or "")%></td>
+<td><%=pcdata(n.sub or "")%></td>
+<td><% if clash_lat and clash_lat[n.tag] then %><% local ms = clash_lat[n.tag] %><span class="<% if ms < 150 then %>sb-lat-ok<% elseif ms <= 300 then %>sb-lat-mid<% else %>sb-lat-bad<% end %>"><%=ms%> ms</span><% else %><span class="sb-lat-bad">—</span><% end %></td>
+</tr>
+<% end %>
+</table>
+<% if gcount > 5 then %>
+<button type="button" class="cbi-button" onclick="sbToggleNodes('<%=g%>', this)">展开全部（还有 <%=gcount - 5%> 个）</button>
+<% end %>
+<% end %>
+<% end %>
+<% else %>
+<p>暂无节点数据。请先在“订阅”页签添加订阅并点“刷新订阅”。</p>
+<% end %>
+<p class="sb-note">节点按名称里的地区词分组（美国／香港／日本／台湾／新加坡／其他）。分组用作分流规则的出口（urltest 组名即 us、hk、jp、tw、sg、other）。</p>
+</div>
+
+<!-- 订阅 -->
+<div id="tab-subs" class="sb-tab">
+<h3>订阅</h3>
+<% if subs and table.getn(subs) > 0 then %>
+<table class="sb-table">
+<tr><th>订阅名</th><th>节点数</th><th>最后刷新</th><th>操作</th></tr>
+<% for _, s in ipairs(subs) do %>
+<% local nc = "—" %>
+<% if nodes and nodes.subscriptions then for _, sc in ipairs(nodes.subscriptions) do if sc.tag == s.tag then nc = tostring(sc.node_count or "—") end end end %>
+<tr>
+<td><%=pcdata(s.tag)%></td>
+<td><%=nc%></td>
+<td><% if nodes and nodes.generated_at then %><%=pcdata(nodes.generated_at)%><% else %>—<% end %></td>
+<td>
+<div class="sb-act-btns">
+<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>">
+<input type="hidden" name="action" value="sub_test" />
+<input type="hidden" name="tag" value="<%=pcdata(s.tag)%>" />
+<input type="submit" class="cbi-button" value="测通" title="测试订阅 URL 是否能拉到节点（只测不保存）" />
+</form>
+<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>" onsubmit="return confirm('删除订阅“<%=pcdata(s.tag)%>”？节点仍会保留在配置里。')">
+<input type="hidden" name="action" value="sub_del" />
+<input type="hidden" name="tag" value="<%=pcdata(s.tag)%>" />
+<input type="submit" class="cbi-button" value="删除" />
+</form>
+</div>
+</td>
+</tr>
+<% end %>
+</table>
+<% else %>
+<p>暂无订阅。</p>
+<% end %>
+<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>">
+	<input type="hidden" name="action" value="sub_refresh" />
+	<input type="submit" class="cbi-button cbi-button-apply" value="刷新全部订阅" onclick="return confirm('将拉取全部订阅并重新生成节点与分组，配置校验通过后才保存。继续吗？')" />
+</form>
+<h4>自动更新</h4>
+<p class="sb-note">每天凌晨 04:00 自动拉取全部订阅并重建节点；拉取失败或 0 个节点时不更新、保留旧配置；成功后自动重启 sing-box 生效。</p>
+<div class="cbi-value"><label class="cbi-value-title">自动更新</label><div class="cbi-value-field"><% if sub_auto then %>已开启（每天 04:00）<% else %>已关闭<% end %></div></div>
+<% if sub_log and sub_log ~= "" then %>
+<div class="cbi-value"><label class="cbi-value-title">上次自动刷新</label><div class="cbi-value-field"><%=pcdata(sub_log)%></div></div>
+<% end %>
+<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>">
+	<input type="hidden" name="action" value="sub_autorefresh" />
+	<input type="hidden" name="enabled" value="<% if sub_auto then %>0<% else %>1<% end %>" />
+	<input type="submit" class="cbi-button cbi-button-apply" value="<% if sub_auto then %>关闭自动更新<% else %>开启自动更新<% end %>" />
+</form>
+<h4>添加订阅</h4>
+<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>">
+	<input type="hidden" name="action" value="sub_add" />
+	<div class="cbi-value"><label class="cbi-value-title">订阅名</label><div class="cbi-value-field"><input type="text" name="tag" size="20" placeholder="如 lj" /></div></div>
+	<div class="cbi-value"><label class="cbi-value-title">订阅 URL</label><div class="cbi-value-field"><input type="text" name="url" size="60" placeholder="https://..." /></div></div>
+	<input type="submit" class="cbi-button cbi-button-apply" value="添加订阅" />
+</form>
+<p class="sb-note">订阅 URL 含凭证，只保存在路由器 /etc/sing-box/subscriptions.json（600 权限），页面上不显示。添加后请点“刷新全部订阅”导入节点。</p>
+</div>
+
+<!-- 分流规则 -->
+<div id="tab-rules" class="sb-tab">
+<h3>分流规则</h3>
+<p class="sb-note">规则按顺序匹配，先命中先生效。标红的是保护规则：102 排除（第 1 条，不可删、不可移）、VM 排除与 Tailscale 排除（保出口隧道，不可删）。</p>
+<% if rules and table.getn(rules) > 0 then %>
+<table class="sb-table">
+<colgroup><col class="sb-col-num" /><col /><col class="sb-col-out" /><col class="sb-col-act" /></colgroup>
+<tr><th>#</th><th>匹配</th><th>出口</th><th>操作</th></tr>
+<% for i, r in ipairs(rules) do %>
+<tr>
+<td><%=i%></td>
+<td>
+<% if r.source_ip_cidr and r.source_ip_cidr[1] == "192.168.2.4/32" then %><span class="sb-protect">保护：102 直连排除</span><br />
+<% elseif r.source_ip_cidr and r.source_ip_cidr[1] == "192.168.2.100/32" then %><span class="sb-protect">保护：VM 直连排除（保隧道）</span><br />
+<% elseif r.domain_suffix and table.getn(r.domain_suffix) == 1 and r.domain_suffix[1] == "tailscale.com" then %><span class="sb-protect">保护：Tailscale 直连（保隧道）</span><br />
+<% end %>
+<%
+-- 长域名列表只显示前 5 个，其余折叠进 title（鼠标悬停可见），避免单行撑宽表格
+local function short_list(prefix, list, max_n)
+  if not list or table.getn(list) == 0 then return nil end
+  local full = table.concat(list, ",")
+  if table.getn(list) <= max_n then return prefix .. " " .. full end
+  local shown = {}
+  for k = 1, max_n do shown[#shown + 1] = list[k] end
+  return prefix .. " " .. table.concat(shown, ",") .. " 等 " .. table.getn(list) .. " 个"
+end
+local match_text = short_list("来源", r.source_ip_cidr, 5)
+  or short_list("域名后缀", r.domain_suffix, 5)
+  or short_list("域名", r.domain, 5)
+  or short_list("域名关键词", r.domain_keyword, 5)
+  or (r.port and ("端口 " .. tostring(r.port)))
+  or short_list("geosite", r.geosite, 5)
+  or short_list("geoip", r.geoip, 5)
+  or (r.rule_set and ("规则集 " .. r.rule_set))
+  or (r.action == "sniff" and "嗅探（sniff）")
+  or (r.inbound and ("入站 " .. tostring(r.inbound)))
+  or "(其他)"
+local full_text = (r.source_ip_cidr and table.concat(r.source_ip_cidr, ",")) or (r.domain_suffix and table.concat(r.domain_suffix, ",")) or (r.domain and table.concat(r.domain, ",")) or (r.domain_keyword and table.concat(r.domain_keyword, ",")) or ""
+%>
+<span title="<%=pcdata(full_text)%>"><%=pcdata(match_text)%></span>
+</td>
+<td><%=pcdata(r.outbound or (r.action or ""))%></td>
+<td>
+<div class="sb-act-btns">
+<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>">
+<input type="hidden" name="action" value="rule_move" />
+<input type="hidden" name="idx" value="<%=i%>" />
+<input type="hidden" name="dir" value="up" />
+<input type="submit" class="cbi-button" value="↑" title="上移" />
+</form>
+<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>">
+<input type="hidden" name="action" value="rule_move" />
+<input type="hidden" name="idx" value="<%=i%>" />
+<input type="hidden" name="dir" value="down" />
+<input type="submit" class="cbi-button" value="↓" title="下移" />
+</form>
+<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>" onsubmit="return confirm('删除第 <%=i%> 条规则？')">
+<input type="hidden" name="action" value="rule_del" />
+<input type="hidden" name="idx" value="<%=i%>" />
+<input type="submit" class="cbi-button" value="删除" />
+</form>
+</div>
+</td>
+</tr>
+<% end %>
+</table>
+<% else %>
+<p>暂无规则。</p>
+<% end %>
+<h4>添加规则</h4>
+<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>">
+	<input type="hidden" name="action" value="rule_add" />
+	<div class="cbi-value"><label class="cbi-value-title">匹配类型</label><div class="cbi-value-field">
+	<select name="kind">
+	<option value="domain_suffix">域名后缀（多个用逗号分隔）</option>
+	<option value="domain_keyword">域名关键词（多个用逗号分隔）</option>
+	<option value="source_ip_cidr">来源 IP/CIDR</option>
+	<option value="port">端口</option>
+	<option value="geosite">geosite</option>
+	<option value="geoip">geoip</option>
+	</select>
+	</div></div>
+	<div class="cbi-value"><label class="cbi-value-title">匹配值</label><div class="cbi-value-field"><input type="text" name="value" size="50" placeholder="如 openai.com,claude.ai" /></div></div>
+	<div class="cbi-value"><label class="cbi-value-title">出口</label><div class="cbi-value-field">
+	<select name="outbound">
+	<option value="warp-masque">warp-masque（MASQUE）</option>
+	<option value="us">us（美国组）</option>
+	<option value="hk">hk（香港组）</option>
+	<option value="jp">jp（日本组）</option>
+	<option value="tw">tw（台湾组）</option>
+	<option value="sg">sg（新加坡组）</option>
+	<option value="other">other（其他组）</option>
+	<option value="direct">direct（直连）</option>
+	<option value="block">block（拦截）</option>
+	</select>
+	</div></div>
+	<input type="submit" class="cbi-button cbi-button-apply" value="添加规则" />
+</form>
+<p class="sb-note">新规则会插到最后一条（国外 → warp-masque）之前。如需更靠前，请用 ↑ 按钮上移。默认已有：AI 域名 → us 组；国外 → warp-masque；国内（geosite-cn / geoip-cn）→ direct。</p>
+</div>
+
+<!-- 高级（JSON） -->
+<div id="tab-advanced" class="sb-tab">
+<h3>配置文件（JSON）</h3>
+<form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>">
+	<input type="hidden" name="action" value="save_config" />
+	<textarea name="config" rows="25" style="width:100%; font-family:monospace"><%=config_text%></textarea>
+	<br />
+	<input type="submit" class="cbi-button cbi-button-apply" value="保存并校验" onclick="return confirm('保存前会用 sing-box check 校验，校验不通过不写入；通过则直接替换配置文件。继续吗？')" />
+</form>
+<p>保存后如服务正在运行，请点“重启”使新配置生效。配置含 MASQUE 私钥与节点凭证，请勿外传。</p>
+</div>
+<script type="text/javascript">
+// Clash 式异步测延迟：页面先出，数字随后填（不阻塞渲染）
+(function() {
+	var url = '<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>?action=latency';
+	function update(id, val, okMax, midMax) {
+		var el = document.getElementById(id);
+		if (!el) return;
+		if (!val || val === '') { el.textContent = '—（服务未运行）'; el.className = 'cbi-value-field sb-lat-bad'; return; }
+		el.textContent = val + ' 秒';
+		var v = parseFloat(val);
+		var cls = 'cbi-value-field ' + (isNaN(v) ? 'sb-lat-bad' : (v < okMax ? 'sb-lat-ok' : (v <= midMax ? 'sb-lat-mid' : 'sb-lat-bad')));
+		el.className = cls;
+	}
+	var xhr = null;
+	var latTesting = false;
+	// 重新测速：测速中禁用按钮防重复点；页面加载时也会自动测一次
+	window.sbRetestLatency = function() {
+		if (latTesting) return;
+		latTesting = true;
+		var btn = document.getElementById('sb-retest-lat');
+		if (btn) { btn.disabled = true; btn.textContent = '测速中…'; }
+		var gEl = document.getElementById('lat-google');
+		var yEl = document.getElementById('lat-yt');
+		if (gEl) gEl.textContent = '测速中…';
+		if (yEl) yEl.textContent = '测速中…';
+		xhr = new XMLHttpRequest();
+		xhr.open('GET', url, true);
+		xhr.timeout = 20000;
+		xhr.onreadystatechange = function() {
+			if (xhr.readyState !== 4) return;
+			latTesting = false;
+			if (btn) { btn.disabled = false; btn.textContent = '重新测速'; }
+			if (xhr.status !== 200) {
+				if (gEl) gEl.textContent = '—（测速失败）';
+				if (yEl) yEl.textContent = '—（测速失败）';
+				return;
+			}
+			try {
+				var d = JSON.parse(xhr.responseText);
+				update('lat-google', d.google, 2, 4);
+				update('lat-yt', d.youtube, 5, 10);
+			} catch (e) {
+				if (gEl) gEl.textContent = '—（测速失败）';
+				if (yEl) yEl.textContent = '—（测速失败）';
+			}
+		};
+		xhr.send();
+	};
+	sbRetestLatency();
+
+	// 延迟配色：<150ms 绿、150–300ms 橙、>300ms 或无数据 红
+	function latClass(ms) {
+		if (ms == null) return 'sb-lat-bad';
+		if (ms < 150) return 'sb-lat-ok';
+		if (ms <= 300) return 'sb-lat-mid';
+		return 'sb-lat-bad';
+	}
+	function esc(s) {
+		return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	}
+	function fmtBytes(n) {
+		if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+		if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
+		return n + ' B';
+	}
+	// 节点页展开/收起（每地区默认只显示前 5 个低延迟节点）
+	window.sbToggleNodes = function(g, btn) {
+		var tbl = document.getElementById('sb-nodes-' + g);
+		if (!tbl) return;
+		var rows = tbl.querySelectorAll('.sb-node-extra');
+		var hidden = rows.length > 0 && rows[0].style.display === 'none';
+		for (var i = 0; i < rows.length; i++) rows[i].style.display = hidden ? '' : 'none';
+		btn.textContent = hidden ? '收起' : '展开全部（还有 ' + rows.length + ' 个）';
+	};
+	// 当前选中节点 + 实时连接（Clash API，异步加载；连接支持搜索与刷新）
+	var sbConnData = null;
+	var sbConnTimer = null;
+	function sbRenderGroups(d) {
+		var gEl = document.getElementById('sb-groups');
+		if (!gEl) return;
+		if (!d.groups || d.groups.length === 0) {
+			gEl.textContent = '—（无组信息）';
+			return;
+		}
+		var gh = '<table class="sb-table"><colgroup><col style="width:60px" /><col /><col class="sb-col-sub" /><col class="sb-col-delay" /></colgroup><tr><th>组</th><th>当前选中节点</th><th>订阅</th><th>延迟</th></tr>';
+		for (var i = 0; i < d.groups.length; i++) {
+			var g = d.groups[i];
+			// 订阅来自控制器（nodes.json 的 tag->订阅映射）；节点名本身不可靠（如 fy 节点是原始名，不带 fy- 前缀）
+			var sub = g.sub || '—';
+			var subCls = sub === 'fy' ? 'sb-sub-fy' : (sub === 'lj' ? 'sb-sub-lj' : '');
+			var subHtml = subCls ? '<span class="' + subCls + '">' + esc(sub) + '</span>' : esc(sub);
+			var latHtml = g.delay != null ? '<span class="' + latClass(g.delay) + '">' + esc(g.delay) + ' ms</span>' : '<span>测速中…</span>';
+			gh += '<tr><td>' + esc(g.name) + '</td><td>' + esc(g.now || '—') + '</td><td>' + subHtml + '</td><td>' + latHtml + '</td></tr>';
+		}
+		gEl.innerHTML = gh + '</table>';
+	}
+	function sbRenderConns() {
+		var cEl = document.getElementById('sb-conns');
+		var cntEl = document.getElementById('sb-conn-count');
+		if (!cEl) return;
+		var d = sbConnData;
+		if (!d || !d.connections || d.connections.length === 0) {
+			cEl.textContent = '—（当前无连接）';
+			if (cntEl) cntEl.textContent = '';
+			return;
+		}
+		var qEl = document.getElementById('sb-conn-q');
+		var q = qEl ? qEl.value.toLowerCase() : '';
+		var rows = [];
+		for (var j = 0; j < d.connections.length; j++) {
+			var cc = d.connections[j];
+			// 搜索同时匹配订阅（fy/lj），方便只看某个订阅的连接
+			if (!q || (cc.src + ' ' + cc.dst + ' ' + cc.proxy + ' ' + (cc.sub || '')).toLowerCase().indexOf(q) !== -1) rows.push(cc);
+		}
+		if (cntEl) cntEl.textContent = '共 ' + d.connections.length + ' 条' + (q ? '，命中 ' + rows.length + ' 条' : '');
+		if (rows.length === 0) {
+			cEl.textContent = '—（无匹配的连接）';
+			return;
+		}
+		var ch = '<table class="sb-table"><colgroup><col class="sb-col-src" /><col class="sb-col-dst" /><col class="sb-col-proxy" /><col class="sb-col-sub" /><col class="sb-col-delay" /><col class="sb-col-bytes" /><col class="sb-col-bytes" /></colgroup><tr><th>来源</th><th>目标</th><th>走的代理</th><th>订阅</th><th>延迟</th><th>下载</th><th>上传</th></tr>';
+		for (var k = 0; k < rows.length; k++) {
+			var r = rows[k];
+			var sub = r.sub || '—';
+			var subCls = sub === 'fy' ? 'sb-sub-fy' : (sub === 'lj' ? 'sb-sub-lj' : '');
+			var subHtml = subCls ? '<span class="' + subCls + '">' + esc(sub) + '</span>' : esc(sub);
+			// 节点延迟：该连接所走节点的 urltest 延迟（每 3 分钟测一轮）；
+			// direct 直连无延迟显 —，节点无数据是正在测速
+			var latHtml;
+			if (r.proxy === 'direct') latHtml = '<span class="sb-lat-bad">—</span>';
+			else if (r.lat != null) latHtml = '<span class="' + latClass(r.lat) + '">' + esc(r.lat) + ' ms</span>';
+			else latHtml = '<span>测速中…</span>';
+			ch += '<tr><td>' + esc(r.src) + '</td><td>' + esc(r.dst) + '</td><td>' + esc(r.proxy) + '</td><td>' + subHtml + '</td><td>' + latHtml + '</td><td>' + fmtBytes(r.down) + '</td><td>' + fmtBytes(r.up) + '</td></tr>';
+		}
+		cEl.innerHTML = ch + '</table>';
+	}
+	function sbLoadTraffic() {
+		var txhr = new XMLHttpRequest();
+		txhr.open('GET', '<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>?action=traffic', true);
+		txhr.timeout = 15000;
+		txhr.onreadystatechange = function() {
+			if (txhr.readyState !== 4) return;
+			var gEl = document.getElementById('sb-groups');
+			var cEl = document.getElementById('sb-conns');
+			if (txhr.status !== 200) {
+				if (gEl) gEl.textContent = '—（服务未运行或接口无响应）';
+				if (cEl) cEl.textContent = '—（服务未运行或接口无响应）';
+				return;
+			}
+			try {
+				var d = JSON.parse(txhr.responseText);
+				sbConnData = d;
+				sbRenderGroups(d);
+				sbRenderConns();
+			} catch (e) {
+				if (gEl) gEl.textContent = '—（解析失败）';
+				if (cEl) cEl.textContent = '—（解析失败）';
+			}
+		};
+		txhr.send();
+	}
+	window.sbFilterConns = function() { sbRenderConns(); };
+	window.sbRefreshTraffic = function() { sbLoadTraffic(); };
+	window.sbAutoConns = function(on) {
+		if (sbConnTimer) { clearInterval(sbConnTimer); sbConnTimer = null; }
+		if (on) sbConnTimer = setInterval(sbLoadTraffic, 10000);
+	};
+	sbLoadTraffic();
+})();
+</script>
+<%+footer%>

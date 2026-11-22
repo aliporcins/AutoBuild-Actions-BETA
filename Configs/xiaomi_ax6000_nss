@@ -125,11 +125,12 @@ CONFIG_PACKAGE_luci-app-wol=y
 # CONFIG_PACKAGE_daed is not set
 # CONFIG_PACKAGE_luci-app-daede is not set
 CONFIG_PACKAGE_luci-app-openclash=y
-# sing-box-tiny (added 2026-11-21, user decision: TRY to bake the tiny build
-# in; 32MB uncompressed / ~14MB squashfs. If the image does not fit, drop
-# this line and rebuild without it -- do NOT cut WiFi/NSS/dnsmasq/firewall/
-# LuCI/i18n to make room).
-CONFIG_PACKAGE_sing-box-tiny=y
+# sing-box: feed sing-box-tiny REMOVED 2026-11-22 (it lacks the MASQUE
+# outbound; the real binary is sing-box-lx 1.14.4-lx.35 arm64, baked via
+# Files-ax6000/usr/bin/sing-box + LuCI UI + starter config, ~73MB
+# uncompressed. If the image does not fit, drop the binary first -- do NOT
+# cut WiFi/NSS/dnsmasq/firewall/LuCI/i18n to make room).
+# CONFIG_PACKAGE_sing-box-tiny is not set
 # CONFIG_PACKAGE_luci-app-lucky is not set (removed 2026-11-19, user decision: room for OpenClash Meta core)
 # CONFIG_PACKAGE_lucky is not set (removed 2026-11-19, user decision: room for OpenClash Meta core)
 # luci-app-diskman removed 2026-11-18 (user-approved first-tier cleanup;

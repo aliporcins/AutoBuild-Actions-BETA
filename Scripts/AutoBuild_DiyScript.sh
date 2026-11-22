@@ -366,6 +366,58 @@ PYEOF
 	echo "LED/timezone overlay check OK: 6 files in tree files/, scripts executable, content verified"
 	fi # end AX6000-only LED/timezone overlay
 
+	# sing-box-lx (2026-11-22) -- AX6000 (qualcommax) ONLY: bake the
+	# sing-box-lx 1.14.4-lx.35 arm64 binary (Leadaxe/sing-box-lx fork;
+	# the "type": "masque" outbound for Cloudflare WARP exists only in
+	# this fork -- the feed sing-box-tiny lacks it, so it was removed
+	# from Configs/xiaomi_ax6000_nss) + the LuCI sing-box UI
+	# (controller/view, same files as the main router) + the
+	# subscription auto-refresh cron + a starter config (direct-only,
+	# NO subscriptions, NO keys -- the user adds those after flashing)
+	# + the geoip/geosite rule sets + the procd init script + UCI
+	# config (enabled=0 by default; the UI's Start button turns it on).
+	# The binary is NOT vendored in the repo (76,597,000 B is too large
+	# for the git-data API push, same as the mihomo core below; it is
+	# fetched here at build time from the pinned sing-box-lx release,
+	# hash-verified twice: the .tar.gz SHA256, then the extracted
+	# binary size + SHA256). Fail fast if the download, either hash,
+	# or the binary size does not match, or any vendored file is
+	# missing, the starter config is not valid JSON, or a secret
+	# leaked into the starter config.
+	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
+	mkdir -p files/usr/bin files/usr/lib/lua/luci/controller files/usr/lib/lua/luci/view/sing-box files/etc/sing-box files/etc/init.d files/etc/config
+	SINGBOX_URL="https://github.com/Leadaxe/sing-box-lx/releases/download/v1.14.4-lx.35/sing-box-1.14.4-lx.35-linux-arm64.tar.gz"
+	SINGBOX_TGZ_SHA256="f9343bb181f1a66e1678595329bd98a4de2c50a6968d7b7cb04b10031d776c3e"
+	curl -fsSL -o sing-box-1.14.4-lx.35-linux-arm64.tar.gz "$SINGBOX_URL" || { echo "ERROR: sing-box download failed"; exit 1; }
+	echo "$SINGBOX_TGZ_SHA256  sing-box-1.14.4-lx.35-linux-arm64.tar.gz" | sha256sum -c - || { echo "ERROR: sing-box .tar.gz SHA256 mismatch"; exit 1; }
+	tar xzf sing-box-1.14.4-lx.35-linux-arm64.tar.gz sing-box-1.14.4-lx.35-linux-arm64/sing-box || { echo "ERROR: sing-box tar extract failed"; exit 1; }
+	mv sing-box-1.14.4-lx.35-linux-arm64/sing-box files/usr/bin/sing-box || { echo "ERROR: sing-box move to tree files/ failed"; exit 1; }
+	rm -rf sing-box-1.14.4-lx.35-linux-arm64 sing-box-1.14.4-lx.35-linux-arm64.tar.gz
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/usr/lib/lua/luci/controller/sing-box.lua" files/usr/lib/lua/luci/controller/sing-box.lua
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/usr/lib/lua/luci/view/sing-box/sing-box.htm" files/usr/lib/lua/luci/view/sing-box/sing-box.htm
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/sing-box/sub-refresh-cron.lua" files/etc/sing-box/sub-refresh-cron.lua
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/sing-box/config.json" files/etc/sing-box/config.json
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/sing-box/geoip-cn.srs" files/etc/sing-box/geoip-cn.srs
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/sing-box/geosite-cn.srs" files/etc/sing-box/geosite-cn.srs
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/sing-box/geosite-nocn.srs" files/etc/sing-box/geosite-nocn.srs
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/init.d/sing-box" files/etc/init.d/sing-box
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/config/sing-box" files/etc/config/sing-box
+	chmod 755 files/usr/bin/sing-box files/etc/init.d/sing-box
+	for f in usr/bin/sing-box usr/lib/lua/luci/controller/sing-box.lua usr/lib/lua/luci/view/sing-box/sing-box.htm etc/sing-box/sub-refresh-cron.lua etc/sing-box/config.json etc/sing-box/geoip-cn.srs etc/sing-box/geosite-cn.srs etc/sing-box/geosite-nocn.srs etc/init.d/sing-box etc/config/sing-box; do
+		[ -f "files/$f" ] || { echo "ERROR: sing-box overlay missing from tree files/: $f"; exit 1; }
+	done
+	[ -x files/usr/bin/sing-box ] || { echo "ERROR: sing-box binary not executable in tree files/"; exit 1; }
+	[ -x files/etc/init.d/sing-box ] || { echo "ERROR: sing-box init not executable in tree files/"; exit 1; }
+	[ "$(stat -c%s files/usr/bin/sing-box)" -eq 76597000 ] || { echo "ERROR: sing-box binary size changed (expected 76597000)"; exit 1; }
+	[ "$(sha256sum files/usr/bin/sing-box | cut -d' ' -f1)" = "1f32fe4525db7b8dad55c9a744167af235e0e527b75221e090cd90d6c6254175" ] || { echo "ERROR: sing-box binary SHA256 mismatch"; exit 1; }
+	[ "$(md5sum files/usr/lib/lua/luci/controller/sing-box.lua | cut -d' ' -f1)" = "60803ce170e1740335d59dd2d839814a" ] || { echo "ERROR: sing-box controller MD5 mismatch"; exit 1; }
+	[ "$(md5sum files/usr/lib/lua/luci/view/sing-box/sing-box.htm | cut -d' ' -f1)" = "2008fb2d7aec4875d5510379d55c0891" ] || { echo "ERROR: sing-box view MD5 mismatch"; exit 1; }
+	[ "$(md5sum files/etc/sing-box/sub-refresh-cron.lua | cut -d' ' -f1)" = "a3849b242711858cca88a91a881291d6" ] || { echo "ERROR: sing-box cron MD5 mismatch"; exit 1; }
+	python3 -c "import json; json.load(open('files/etc/sing-box/config.json'))" || { echo "ERROR: sing-box starter config is not valid JSON"; exit 1; }
+	! grep -q "private_key\|subscription\|vless\|uuid" files/etc/sing-box/config.json || { echo "ERROR: sing-box starter config contains a secret (must never enter firmware)"; exit 1; }
+	echo "sing-box overlay check OK: 10 files in tree files/, binary 76597000 B SHA256 verified, UI MD5s verified, starter config valid and secret-free"
+	fi # end AX6000-only sing-box overlay
+
 	# OpenClash Meta core (2026-11-19, user decision) -- AX6000
 	# (qualcommax) ONLY: bake the mihomo binary into the image so
 	# OpenClash works out of the box (the core was missing; 5.1M
