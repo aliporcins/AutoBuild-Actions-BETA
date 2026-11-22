@@ -136,9 +136,12 @@ CONFIG_PACKAGE_luci-app-openclash=y
 # luci-app-diskman removed 2026-11-18 (user-approved first-tier cleanup;
 # no USB port, no drives to manage on AX6000).
 # luci-app-ramfree + luci-app-autoreboot RESTORED 2026-11-22 (user correction:
-# wanted). NOTE: autoreboot's scheduled reboot defaults to ENABLED in the
-# package; the 05:00 default must be turned off after flashing (uci set
-# luci-app-autoreboot enable=0) -- the package stays, the schedule stays off.
+# wanted). NOTE (2026-11-23 fixed firmware): autoreboot's scheduled reboot
+# ships enable='1' upstream, but the DiyScript autoreboot block now seds the
+# packaged default to enable='0' -- the package stays, the schedule stays
+# off until the user turns it on in LuCI. (Before 2026-11-23 the 05:00
+# default had to be turned off by hand after flashing; that is what bit
+# the device on 2026-11-23 05:00.)
 # (DiyScript autoreboot block + workflow defconfig/post-build gates are
 # guarded by CONFIG_PACKAGE_luci-app-autoreboot=y; x86_64 still selects it.)
 CONFIG_PACKAGE_luci-app-ramfree=y

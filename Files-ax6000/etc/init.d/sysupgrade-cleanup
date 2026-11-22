@@ -1,0 +1,17 @@
+#!/bin/sh /etc/rc.common
+# Delete the leftover sysupgrade backup tarball on every boot.
+# (2026-11-23 fixed firmware.) OpenWrt's NAND sysupgrade moves the
+# config backup to the rootfs_data volume (/overlay/sysupgrade.tgz)
+# so it survives the flash, and preinit restores the config from it
+# -- but nothing ever deletes it afterwards. A 26.8MB leftover filled
+# the 25MB overlay on 40b10 and the next boot fell back to a RAM
+# overlay (= factory state: no WiFi password, LAN back to default,
+# SSH host key regenerated). The one-shot 99-firstboot-init delete
+# only covers the first flash; this runs on EVERY boot so a leftover
+# from ANY sysupgrade is removed before it can accumulate.
+# The file is pure leftover by the time this runs: the config restore
+# (if any) already happened in preinit.
+START=99
+start() {
+	rm -f /overlay/sysupgrade.tgz
+}

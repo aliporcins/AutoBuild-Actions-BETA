@@ -3,8 +3,9 @@
 # AutoBuild DiyScript -- adapted for aliporcins/AutoBuild-Actions-BETA:
 # builds official openwrt-25.12 for x86_64 with the production VM100 package set.
 # No credentials are baked into the image; default address is 192.168.2.1
-# (user decision 2026-11-20, main-router rebuild: the production LAN
-# address is now baked in so a fresh flash comes up at 192.168.2.1).
+# for x86_64 (main router) and 192.168.2.5 for the AX6000 (2026-11-23
+# fixed firmware: the AX6000 build default was .1, colliding with the
+# main router; .5 is now the true default, set in Firmware_Diy_Core).
 
 Firmware_Diy_Core() {
 
@@ -19,8 +20,15 @@ Firmware_Diy_Core() {
 
 	Default_IP="192.168.2.1"
 	# 固件 IP 地址 (user decision 2026-11-20: production 192.168.2.1 is
-	# now baked in; both x86_64 and AX6000 builds use it as the default.
-	# A workflow Tempoary_IP input still overrides this when supplied.)
+	# now baked in for the x86_64 main router. The AX6000 is overridden
+	# to 192.168.2.5 just below -- 2026-11-23 fixed firmware: the .1
+	# default collided with the main router and .5 only came from the
+	# one-shot 99-firstboot-init. A workflow Tempoary_IP input still
+	# overrides this when supplied.)
+	# AX6000 (qualcommax) only: production LAN is 192.168.2.5.
+	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
+		Default_IP="192.168.2.5"
+	fi
 
 	Default_Title="Powered by AutoBuild-Actions"
 	# 固件终端首页显示的额外信息
@@ -225,6 +233,15 @@ Firmware_Diy() {
 	# install time, but keep it executable in the tree too.
 	chmod 755 package/luci-app-autoreboot/files/root/etc/init.d/autoreboot
 	[ -x package/luci-app-autoreboot/files/root/etc/init.d/autoreboot ] || { echo "ERROR: autoreboot init script not executable"; exit 1; }
+	# Default OFF (2026-11-23 fixed firmware): the package ships
+	# enable='1' (05:00 daily reboot); the 2026-11-23 incident was a
+	# 05:00 reboot on a device whose config had just been lost. The
+	# package stays (user wants it), the schedule stays OFF until the
+	# user turns it on in LuCI. The init script removes any reboot
+	# cron line when disabled, so no crontab change is needed.
+	sed -i "s/option enable '1'/option enable '0'/" package/luci-app-autoreboot/files/root/etc/config/autoreboot
+	grep -q "option enable '0'" package/luci-app-autoreboot/files/root/etc/config/autoreboot || { echo "ERROR: autoreboot default enable=0 did not apply"; exit 1; }
+	if grep -q "option enable '1'" package/luci-app-autoreboot/files/root/etc/config/autoreboot; then echo "ERROR: autoreboot config still contains enable '1'"; exit 1; fi
 	# Deps the Lua UI needs on ucode LuCI (see comment above).
 	sed -i 's|^\tPKGARCH:=all$|\tDEPENDS:=+luci-base +luci-compat\n\tPKGARCH:=all|' package/luci-app-autoreboot/Makefile
 	grep -q "DEPENDS:=+luci-base +luci-compat" package/luci-app-autoreboot/Makefile || { echo "ERROR: autoreboot DEPENDS fix did not apply"; exit 1; }
@@ -315,13 +332,14 @@ PYEOF
 	# files/ is copied into the target rootfs after package files.
 	# No credentials here: the LED scripts only write LED brightness
 	# nodes, the crontab only schedules them, 99-set-timezone only
-	# sets timezone/zonename, and 99-firstboot-init only applies the
-	# production LAN (192.168.2.5) + hostname when the LAN is still
-	# the build default (factory state); it exits without
-	# touching anything when settings were preserved. x86_64 (main
-	# router) has no such LED nodes and its timezone is already set
-	# via config, so this whole block is skipped there to keep the
-	# image identical to the current one.
+	# sets timezone/zonename (the build default is now CST-8 too),
+	# and 99-firstboot-init is a safety net that fixes the LAN to
+	# 192.168.2.5 + hostname to ax6000 only if they are somehow still
+	# at the old defaults; it exits without touching anything when
+	# settings were preserved. x86_64 (main router) has no such LED
+	# nodes and its timezone is already set via config, so this whole
+	# block is skipped there to keep the image identical to the
+	# current one.
 	# Fail fast if any vendored file is missing or its content drifts.
 	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
 	mkdir -p files/root files/etc/crontabs files/etc/uci-defaults files/etc/config
@@ -365,6 +383,72 @@ PYEOF
 	! grep -q "option key" files/etc/config/wireless || { echo "ERROR: wireless contains a key line (password must never enter firmware)"; exit 1; }
 	echo "LED/timezone overlay check OK: 6 files in tree files/, scripts executable, content verified"
 	fi # end AX6000-only LED/timezone overlay
+
+	# Build defaults: LAN 192.168.2.5 + hostname ax6000 + timezone
+	# CST-8 (2026-11-23 fixed firmware) -- AX6000 (qualcommax) ONLY.
+	# The build default LAN was 192.168.2.1 (collides with the main
+	# router; .5 only came from the one-shot 99-firstboot-init) and
+	# the build default timezone was GMT0/UTC with hostname OpenWrt.
+	# Bake the production values into config_generate itself so a
+	# factory reset comes up at .5 / ax6000 / CST-8 without relying
+	# on any first-boot script (99-firstboot-init + 99-set-timezone
+	# stay as safety nets). The framework's Default_IP sed (which
+	# replaces 192.168.1.1 with Default_IP) runs independently and
+	# does not touch these lines; Tempoary_IP/HOSTNAME workflow
+	# inputs still override when supplied. Fail fast if the NSS
+	# tree's config_generate drifts.
+	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
+	CG_FILE="package/base-files/files/bin/config_generate"
+	[ -f "$CG_FILE_FILE" ] || { echo "ERROR: config_generate missing from tree: $CG"; exit 1; }
+	grep -qF "set system.@system[-1].timezone='GMT0'" "$CG_FILE" || { echo "ERROR: config_generate timezone default changed (expected GMT0)"; exit 1; }
+	grep -qF "set system.@system[-1].zonename='UTC'" "$CG_FILE" || { echo "ERROR: config_generate zonename default changed (expected UTC)"; exit 1; }
+	grep -qF "set system.@system[-1].hostname='OpenWrt'" "$CG_FILE" || { echo "ERROR: config_generate hostname default changed (expected OpenWrt)"; exit 1; }
+	sed -i "s/set system.@system\[-1\].timezone='GMT0'/set system.@system[-1].timezone='CST-8'/" "$CG_FILE"
+	sed -i "s/set system.@system\[-1\].zonename='UTC'/set system.@system[-1].zonename='Asia\/Shanghai'/" "$CG_FILE"
+	sed -i "s/set system.@system\[-1\].hostname='OpenWrt'/set system.@system[-1].hostname='ax6000'/" "$CG_FILE"
+	grep -qF "set system.@system[-1].timezone='CST-8'" "$CG_FILE" || { echo "ERROR: config_generate timezone=CST-8 did not apply"; exit 1; }
+	grep -qF "set system.@system[-1].zonename='Asia/Shanghai'" "$CG_FILE" || { echo "ERROR: config_generate zonename=Asia/Shanghai did not apply"; exit 1; }
+	grep -qF "set system.@system[-1].hostname='ax6000'" "$CG_FILE" || { echo "ERROR: config_generate hostname=ax6000 did not apply"; exit 1; }
+	if grep -qF "timezone='GMT0'" "$CG_FILE"; then echo "ERROR: config_generate still contains GMT0"; exit 1; fi
+	if grep -qF "zonename='UTC'" "$CG_FILE"; then echo "ERROR: config_generate still contains zonename UTC"; exit 1; fi
+	echo "config_generate defaults OK: LAN via Default_IP, hostname ax6000, timezone CST-8 / Asia/Shanghai"
+	fi # end AX6000-only build defaults (config_generate)
+
+	# sysupgrade backup + leftover cleanup (2026-11-23 fixed firmware)
+	# -- AX6000 (qualcommax) ONLY. Two parts:
+	# (a) /etc/sysupgrade.conf: add the user configs no keep.d entry
+	#     or package conffile covers (/etc/openclash/config/ +
+	#     /etc/sing-box/config.json) so "keep settings" preserves
+	#     them. The 57MB clash_meta binary + 10MB GeoSite.dat are
+	#     baked into the image and are NOT in the backup.
+	# (b) /etc/init.d/sysupgrade-cleanup (+ rc.d symlink): delete
+	#     /overlay/sysupgrade.tgz on EVERY boot. OpenWrt's NAND
+	#     sysupgrade moves the backup tarball to the rootfs_data
+	#     volume and never deletes it after restore; the one-shot
+	#     99-firstboot-init delete only covers the first flash.
+	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
+	mkdir -p files/etc files/etc/init.d files/etc/rc.d
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/sysupgrade.conf" files/etc/sysupgrade.conf
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/init.d/sysupgrade-cleanup" files/etc/init.d/sysupgrade-cleanup
+	# The rc.d symlink is GENERATED here, not vendored in the repo:
+	# the git-data API push used for this repo cannot carry symlinks,
+	# so there is no Files-ax6000/etc/rc.d/ in git. ln -sf creates
+	# the same symlink the buildroot files/ overlay would have copied.
+	ln -sf ../init.d/sysupgrade-cleanup files/etc/rc.d/S99sysupgrade-cleanup
+	chmod 755 files/etc/init.d/sysupgrade-cleanup
+	[ -f files/etc/sysupgrade.conf ] || { echo "ERROR: sysupgrade.conf missing from tree files/"; exit 1; }
+	[ -f files/etc/init.d/sysupgrade-cleanup ] || { echo "ERROR: sysupgrade-cleanup init missing from tree files/"; exit 1; }
+	[ -x files/etc/init.d/sysupgrade-cleanup ] || { echo "ERROR: sysupgrade-cleanup init not executable in tree files/"; exit 1; }
+	[ -L files/etc/rc.d/S99sysupgrade-cleanup ] || { echo "ERROR: S99sysupgrade-cleanup is not a symlink in tree files/"; exit 1; }
+	[ "$(readlink files/etc/rc.d/S99sysupgrade-cleanup)" = "../init.d/sysupgrade-cleanup" ] || { echo "ERROR: S99sysupgrade-cleanup symlink target wrong"; exit 1; }
+	grep -q "^/etc/openclash/config/$" files/etc/sysupgrade.conf || { echo "ERROR: sysupgrade.conf missing /etc/openclash/config/"; exit 1; }
+	grep -q "^/etc/sing-box/config.json$" files/etc/sysupgrade.conf || { echo "ERROR: sysupgrade.conf missing /etc/sing-box/config.json"; exit 1; }
+	! grep -q "^/etc/openclash/$" files/etc/sysupgrade.conf || { echo "ERROR: sysupgrade.conf must not list bare /etc/openclash/ (57MB binary)"; exit 1; }
+	grep -q "rm -f /overlay/sysupgrade.tgz" files/etc/init.d/sysupgrade-cleanup || { echo "ERROR: sysupgrade-cleanup missing rm /overlay/sysupgrade.tgz"; exit 1; }
+	grep -q "^START=99$" files/etc/init.d/sysupgrade-cleanup || { echo "ERROR: sysupgrade-cleanup missing START=99"; exit 1; }
+	sh -n files/etc/init.d/sysupgrade-cleanup || { echo "ERROR: sysupgrade-cleanup fails shell syntax check"; exit 1; }
+	echo "sysupgrade backup+cleanup check OK: sysupgrade.conf + cleanup init + rc.d symlink in tree files/"
+	fi # end AX6000-only sysupgrade backup+cleanup
 
 	# sing-box-lx (2026-11-22) -- AX6000 (qualcommax) ONLY: bake the
 	# sing-box-lx 1.14.4-lx.35 arm64 binary (Leadaxe/sing-box-lx fork;

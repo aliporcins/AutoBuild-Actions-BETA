@@ -1,23 +1,17 @@
 #!/bin/sh
-# First-boot initialization for Xiaomi AX6000 (RA72) -- 2026-11-21.
+# First-boot initialization for Xiaomi AX6000 (RA72) -- 2026-11-21,
+# revised 2026-11-23 (fixed firmware).
 # Runs once via /etc/uci-defaults on first boot (factory state only).
-# Fixes the 9baca incident (2026-11-21): a config-loss flash came up
-# at the build default 192.168.2.1, colliding with the main router,
-# with WiFi off and the device unreachable at 192.168.2.5.
+# The build defaults are now production-correct (LAN 192.168.2.5,
+# hostname ax6000, timezone CST-8 -- set in config_generate by the
+# DiyScript), so this script is a SAFETY NET, not the primary
+# mechanism: it only fixes things if they are somehow still at the
+# old defaults (e.g. a preserved pre-fix config, or a config_generate
+# fallback). It exits without touching anything when settings were
+# preserved from a fixed firmware.
+# Timezone is NOT set here (99-set-timezone already handles it, and
+# the build default is now CST-8 too).
 #
-# Guard: only run when the LAN is still the build default 192.168.2.1
-# (config_generate just created it = factory state / config lost).
-# If the LAN is already 192.168.2.5 (preserved config) or anything
-# else (user-changed), exit without touching anything -- a sysupgrade
-# that preserves settings must never be overwritten by this script.
-# Timezone is NOT set here (99-set-timezone already handles it).
-#
-# Race fix (2026-11-21): on the 40b10 flash this script ran before the
-# network config existed, so `uci get` returned empty, the guard below
-# failed, and the script exited + self-deleted while the LAN stayed at
-# the build default 192.168.2.1. Wait for the config to appear first;
-# if it still never appears, treat it as factory state (.1) -- that is
-# what config_generate will create.
 # sysupgrade.tgz cleanup (2026-11-21, root-cause fix): sysupgrade leaves its
 # config-backup tarball at /overlay/sysupgrade.tgz (26.8MB on 40b10) and never
 # deletes it; on the 25MB overlay partition that fills it to 100%, the next
@@ -25,6 +19,9 @@
 # state: no WiFi password, LAN back to default, SSH host key regenerated).
 # Delete it on first boot, before anything else -- the config restore (if
 # any) already happened in preinit, so this file is pure leftover.
+# (2026-11-23: a persistent every-boot cleanup init script
+# /etc/init.d/sysupgrade-cleanup now backs this up, so a leftover from
+# ANY sysupgrade -- not just the first flash -- is removed.)
 rm -f /overlay/sysupgrade.tgz
 for i in 1 2 3 4 5 6; do
     LAN_IP=$(uci get network.lan.ipaddr 2>/dev/null)
@@ -32,21 +29,40 @@ for i in 1 2 3 4 5 6; do
     sleep 5
 done
 [ -z "$LAN_IP" ] && LAN_IP="192.168.2.1"
-[ "$LAN_IP" = "192.168.2.1" ] || exit 0
 
-# Factory state: production LAN + hostname.
-uci set network.lan.ipaddr='192.168.2.5'
-uci set system.@system[0].hostname='ax6000'
-uci commit network
-uci commit system
+# Hostname safety net (NOT gated on the LAN): the build default is
+# ax6000, but a preserved pre-fix config may still say OpenWrt.
+# (2026-11-23: previously this lived inside the LAN branch, so once
+# the build default became .5 the script exited before ever setting
+# the hostname.)
+HOSTNAME=$(uci get system.@system[0].hostname 2>/dev/null)
+if [ "$HOSTNAME" != "ax6000" ]; then
+	uci set system.@system[0].hostname='ax6000'
+	uci commit system
+fi
+
+# LAN safety net: the build default is now 192.168.2.5. If the LAN is
+# somehow still the old build default 192.168.2.1 (preserved pre-fix
+# config, or a config_generate fallback), fix it to .5. If it is
+# already .5 (preserved config) or anything else (user-changed),
+# leave it alone -- a sysupgrade that preserves settings must never
+# be overwritten by this script.
+#
+# Race fix (2026-11-21): on the 40b10 flash this script ran before the
+# network config existed, so `uci get` returned empty, the guard below
+# failed, and the script exited + self-deleted while the LAN stayed at
+# the build default 192.168.2.1. Wait for the config to appear first;
+# if it still never appears, treat it as factory state (.1) -- that is
+# what config_generate will create.
+if [ "$LAN_IP" = "192.168.2.1" ]; then
+	uci set network.lan.ipaddr='192.168.2.5'
+	uci commit network
+	/etc/init.d/network reload 2>/dev/null
+	wifi reload 2>/dev/null
+fi
 
 # WiFi is NOT touched here anymore (2026-11-21): the static wireless
 # config is baked into the image at /etc/config/wireless (radios,
 # channels, SSIDs 5G/2.4G/5G, psk2 with NO key -- password is entered
 # in LuCI after flashing, it never enters firmware).
-
-# Apply now (uci-defaults runs before network is fully up on first
-# boot; a reboot also applies it, but reload makes it immediate).
-/etc/init.d/network reload 2>/dev/null
-wifi reload 2>/dev/null
 exit 0
