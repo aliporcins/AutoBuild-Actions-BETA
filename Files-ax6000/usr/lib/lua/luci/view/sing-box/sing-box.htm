@@ -340,6 +340,17 @@ local full_text = (r.source_ip_cidr and table.concat(r.source_ip_cidr, ",")) or 
 	<input type="submit" class="cbi-button cbi-button-apply" value="保存并校验" onclick="return confirm('保存前会用 sing-box check 校验，校验不通过不写入；通过则直接替换配置文件。继续吗？')" />
 </form>
 <p>保存后如服务正在运行，请点“重启”使新配置生效。配置含 MASQUE 私钥与节点凭证，请勿外传。</p>
+<h3>备份与恢复</h3>
+<p>导出备份会把当前配置、订阅、节点、方案名、开机自启与订阅自动更新开关打成一个 JSON 文件下载到你的电脑；换路由器或重刷后，在新机器的管理页导入这个文件即可恢复（导入前先校验，校验通过才写入并重启，通不过原样不动）。备份文件含 MASQUE 私钥与订阅凭证，请妥善保管，勿外传。</p>
+<form method="get" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>">
+	<input type="hidden" name="action" value="backup_export" />
+	<input type="submit" class="cbi-button" value="导出备份" />
+</form>
+<form method="post" enctype="multipart/form-data" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>">
+	<input type="hidden" name="action" value="backup_import" />
+	<input type="file" name="backup_file" accept=".json,application/json" />
+	<input type="submit" class="cbi-button cbi-button-apply" value="导入备份" onclick="return confirm('导入会先校验备份里的配置，校验通过才替换当前配置并重启服务。继续吗？')" />
+</form>
 </div>
 <script type="text/javascript">
 // Clash 式异步测延迟：页面先出，数字随后填（不阻塞渲染）

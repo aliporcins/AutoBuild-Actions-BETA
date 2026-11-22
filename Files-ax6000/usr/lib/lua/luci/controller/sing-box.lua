@@ -115,7 +115,7 @@ end
 -- 订阅自动更新是否开启（crontab 里有无刷新行）
 local function sub_auto_enabled()
 	local sys = require("luci.sys")
-	return sys.call("grep -q 'sing-box-sub-refresh' /etc/crontabs/root 2>/dev/null") == 0
+	return sys.call("grep -q 'sub-refresh-cron' /etc/crontabs/root 2>/dev/null") == 0
 end
 
 -- 自动更新日志最后一行（无日志返回 ""）
@@ -147,7 +147,60 @@ local function save_config_checked(cfg_table)
 	return false, "校验未通过，未写入。\n" .. out
 end
 
+-- ---------- 备份与恢复 ----------
+-- 备份内容：config.json + subscriptions.json + nodes.json + UCI（方案名、自启）+ 订阅自动更新开关
+-- 备份文件含 MASQUE 私钥与订阅凭证，导出后请妥善保管，勿外传。
+local function build_backup()
+	local uci = require("luci.model.uci").cursor()
+	return {
+		format = "sing-box-backup",
+		version = 1,
+		created_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+		config = read_json(CONFFILE),
+		subscriptions = read_json(SUBSFILE),
+		nodes = read_json(NODESFILE),
+		uci = {
+			enabled = uci:get("sing-box", "main", "enabled") or "0",
+			scheme_a_name = uci:get("sing-box", "main", "scheme_a_name"),
+			scheme_b_name = uci:get("sing-box", "main", "scheme_b_name"),
+		},
+		sub_auto = sub_auto_enabled(),
+	}
+end
+
 -- ---------- 状态 ----------
+-- 取 sing-box 已运行时间（busybox ps 不支持 -o etime，改读 /proc；
+-- /proc/<pid>/stat 第 22 字段是启动时刻（自开机起的时钟节拍，USER_HZ=100），
+-- 与 /proc/uptime 的系统开机时长相减即进程运行时长）
+local function proc_uptime(pid)
+	local f = io.open("/proc/" .. pid .. "/stat", "r")
+	if not f then return "" end
+	local s = f:read("*a")
+	f:close()
+	local rest = s:match(".*%) (.*)$")
+	if not rest then return "" end
+	local fields = {}
+	for w in rest:gmatch("%S+") do fields[#fields+1] = w end
+	local starttime = tonumber(fields[20])
+	if not starttime then return "" end
+	local up = io.open("/proc/uptime", "r")
+	if not up then return "" end
+	local ups = up:read("*a")
+	up:close()
+	local sys_up = tonumber(ups:match("^(%S+)"))
+	if not sys_up then return "" end
+	local secs = math.floor(sys_up - starttime / 100)
+	if secs < 0 then secs = 0 end
+	local d = math.floor(secs / 86400)
+	local h = math.floor(secs % 86400 / 3600)
+	local m = math.floor(secs % 3600 / 60)
+	local sec = secs % 60
+	if d > 0 then return string.format("%d天%d小时%d分", d, h, m) end
+	if h > 0 then return string.format("%d小时%d分", h, m) end
+	if m > 0 then return string.format("%d分%d秒", m, sec) end
+	return string.format("%d秒", sec)
+end
+
 local function get_state()
 	local uci = require("luci.model.uci").cursor()
 	local sys = require("luci.sys")
@@ -156,7 +209,7 @@ local function get_state()
 	local uptime = ""
 	if running then
 		pid = (sys.exec("pidof sing-box 2>/dev/null") or ""):gsub("%s+$", "")
-		uptime = (sys.exec("ps -o etime= -p " .. pid .. " 2>/dev/null") or ""):gsub("%s+$", "")
+		uptime = proc_uptime(pid)
 	end
 	local sb_version = (sys.exec(PROG .. " version 2>/dev/null") or ""):match("([^\n]*)") or ""
 	local enabled = uci:get("sing-box", "main", "enabled") or "0"
@@ -670,19 +723,60 @@ end
 -- （2026-11-22 实锤：用户关自启后切方案 A，restart 把服务停了且没起来，
 -- 页面报“重启失败（init 脚本返回码 0）”——返回码 0 是 init 脚本“成功地
 -- 什么都没做”。）
+-- （2026-11-22 18:3x 再实锤：导入备份调本函数同样 rc=0 但服务没起来，
+-- 用户只得手动点启动。根因：INIT restart 是停＋启连发，旧进程还没彻底
+-- 退出、新进程就去抢 TUN/端口，起不来；且 init 返回码 0 不代表进程在跑。
+-- 修法：改显式 stop→等旧进程死透→start，并轮询确认进程真的在跑，
+-- 起不来补一次 start；返回值以进程是否在跑为准，不再信 init 返回码。）
 local function restart_preserve_autostart()
 	local sys = require("luci.sys")
 	local enabled = (sys.exec("uci get sing-box.main.enabled 2>/dev/null") or ""):gsub("%s+$", "")
-	local rc = sys.call("uci set sing-box.main.enabled='1' && uci commit sing-box && " .. INIT .. " enable && " .. INIT .. " restart")
+	-- 临时开自启（start_service 在 enabled=0 时直接 return 0 不启动）
+	sys.call("uci set sing-box.main.enabled='1' && uci commit sing-box && " .. INIT .. " enable")
+	-- 先停，等旧进程彻底退出（最多 5 秒），再启动
+	-- （路由器 busybox 的 sleep 不支持小数，只能用整秒）
+	sys.call(INIT .. " stop")
+	for _ = 1, 5 do
+		if sys.call("pidof sing-box >/dev/null 2>&1") ~= 0 then break end
+		sys.call("sleep 1")
+	end
+	sys.call(INIT .. " start")
+	-- 等新进程起来（最多 10 秒）；起不来补一次 start，再等 5 秒
+	local ok = false
+	for _ = 1, 10 do
+		if sys.call("pidof sing-box >/dev/null 2>&1") == 0 then ok = true break end
+		sys.call("sleep 1")
+	end
+	if not ok then sys.call(INIT .. " start") end
+	for _ = 1, 5 do
+		if sys.call("pidof sing-box >/dev/null 2>&1") == 0 then ok = true break end
+		sys.call("sleep 1")
+	end
+	-- 恢复原自启值
 	if enabled ~= "1" then
 		sys.call("uci set sing-box.main.enabled='0'; uci commit sing-box; " .. INIT .. " disable")
 	end
-	return rc
+	return ok and 0 or 1
 end
 
 function action()
 	local http = require("luci.http")
 	local sys = require("luci.sys")
+	-- 备份导入：只在 multipart 文件上传时才注册文件处理器；
+	-- 普通表单（URL-encoded）不注册，避免干扰 formvalue 解析
+	local upload_data = ""
+	local upload_err = nil
+	local ct = http.getenv("CONTENT_TYPE") or ""
+	if ct:find("multipart/form-data", 1, true) then
+		http.setfilehandler(function(meta, chunk, eof)
+			if upload_err then return end
+			if not chunk then return end
+			upload_data = upload_data .. chunk
+			if #upload_data > 1048576 then
+				upload_err = "备份文件过大（超过 1 MiB），未导入。"
+			end
+		end)
+	end
 	local act = http.formvalue("action") or ""
 	local st = get_state()
 
@@ -750,6 +844,89 @@ function action()
 					if #out > 2000 then out = out:sub(1, 2000) .. "……" end
 					st.errmsg = "校验未通过，未写入。"
 					st.check_output = out
+				end
+			end
+		end
+	elseif act == "backup_export" then
+		-- 导出备份：把当前配置、订阅、节点、方案名、自启与自动更新开关打成一个 JSON 文件下载
+		local backup = build_backup()
+		if not backup.config then
+			st.errmsg = "读取配置失败，无法导出备份。"
+		else
+			local s = jsonc.stringify(backup, true)
+			local fn = "sing-box-backup-" .. os.date("%Y%m%d-%H%M%S") .. ".json"
+			http.header("Content-Disposition", "attachment; filename=\"" .. fn .. "\"")
+			http.prepare_content("application/json")
+			http.write(s)
+			return
+		end
+	elseif act == "backup_import" then
+		-- 导入备份：先校验备份里的配置，通过才写入并重启；通不过原样不动
+		if upload_err then
+			st.errmsg = upload_err
+		elseif upload_data == "" then
+			st.errmsg = "未收到备份文件，请先选择文件再点“导入备份”。"
+		else
+			local ok, backup = pcall(jsonc.parse, upload_data)
+			if not ok or type(backup) ~= "table" then
+				st.errmsg = "备份文件不是有效的 JSON，未导入。"
+			elseif backup.format ~= "sing-box-backup" then
+				st.errmsg = "这不是 sing-box 备份文件（缺少格式标记），未导入。"
+			elseif type(backup.config) ~= "table" then
+				st.errmsg = "备份文件里没有配置内容，未导入。"
+			else
+				local ok2, err2 = save_config_checked(backup.config)
+				if not ok2 then
+					st.errmsg = "备份里的配置校验未通过，未导入：" .. (err2 or "")
+				else
+					-- 写订阅与节点（有才写，缺了就跳过）
+					if type(backup.subscriptions) == "table" then
+						if write_file(SUBSFILE, jsonc.stringify(backup.subscriptions, true)) then
+							sys.call("chmod 600 " .. SUBSFILE .. " 2>/dev/null")
+						end
+					end
+					if type(backup.nodes) == "table" then
+						write_file(NODESFILE, jsonc.stringify(backup.nodes, true))
+					end
+					-- 恢复 UCI（方案名、自启）
+					if type(backup.uci) == "table" then
+						local uci = require("luci.model.uci").cursor()
+						if backup.uci.enabled == "1" or backup.uci.enabled == "0" then
+							uci:set("sing-box", "main", "enabled", backup.uci.enabled)
+						end
+						if backup.uci.scheme_a_name and backup.uci.scheme_a_name ~= "" then
+							uci:set("sing-box", "main", "scheme_a_name", backup.uci.scheme_a_name)
+						end
+						if backup.uci.scheme_b_name and backup.uci.scheme_b_name ~= "" then
+							uci:set("sing-box", "main", "scheme_b_name", backup.uci.scheme_b_name)
+						end
+						uci:commit("sing-box")
+						if backup.uci.enabled == "1" then sys.call(INIT .. " enable") else sys.call(INIT .. " disable") end
+					end
+					-- 恢复订阅自动更新开关
+					if backup.sub_auto ~= nil then
+						local crontab = "/etc/crontabs/root"
+						local lines = {}
+						local cur = read_file(crontab) or ""
+						for line in (cur .. "\n"):gmatch("([^\n]*)\n") do
+							if not line:find("sub-refresh-cron", 1, true) then
+								if line ~= "" then lines[#lines + 1] = line end
+							end
+						end
+						if backup.sub_auto then lines[#lines + 1] = SUB_CRON_LINE end
+						if write_file(crontab, table.concat(lines, "\n") .. "\n") then
+							sys.call("/etc/init.d/cron restart 2>/dev/null; /etc/init.d/cron reload 2>/dev/null")
+						end
+					end
+					-- 重启服务（保留自启）
+					local rc = restart_preserve_autostart()
+					sys.call("sleep 3")
+					st = get_state()
+					if st.running then
+						st.message = "备份已导入并通过校验，服务已重启。"
+					else
+						st.errmsg = "备份已导入但重启失败（init 脚本返回码 " .. tostring(rc) .. "），请用 SSH 检查。"
+					end
 				end
 			end
 		end
@@ -844,7 +1021,7 @@ function action()
 		local lines = {}
 		local cur = read_file(crontab) or ""
 		for line in (cur .. "\n"):gmatch("([^\n]*)\n") do
-			if not line:find("sing-box-sub-refresh", 1, true) then
+			if not line:find("sub-refresh-cron", 1, true) then
 				if line ~= "" then lines[#lines + 1] = line end
 			end
 		end

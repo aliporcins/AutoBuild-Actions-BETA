@@ -33,19 +33,49 @@ log(msg)
 -- 服务在运行才重启生效；重启时保留开机自启设置（init 脚本在 enabled=0 时
 -- start 直接返回 0 且不启动，裸 restart 会把服务停掉且不再起来）。
 local function restart_preserve_autostart()
-	local f = io.popen("uci get sing-box.main.enabled 2>/dev/null")
-	local enabled = f and f:read("*a") or ""
-	if f then f:close() end
-	enabled = enabled:gsub("%s+$", "")
-	os.execute("uci set sing-box.main.enabled='1' && uci commit sing-box && /etc/init.d/sing-box enable && /etc/init.d/sing-box restart >/dev/null 2>&1")
+	-- 读当前自启值（直接读配置文件，不用 io.popen——路由器 Lua 的 io.popen 读不到输出）
+	local enabled = "0"
+	do
+		local f = io.open("/etc/config/sing-box", "r")
+		if f then
+			local s = f:read("*a")
+			f:close()
+			if s and s:find("option enabled '1'") then enabled = "1" end
+		end
+	end
+	os.execute("uci set sing-box.main.enabled='1' && uci commit sing-box && /etc/init.d/sing-box enable >/dev/null 2>&1")
+	-- 先停，等旧进程彻底退出（最多 5 秒），再启动（INIT restart 是停＋启连发，
+	-- 旧进程还没退出、新进程就去抢 TUN/端口，起不来；2026-11-22 导入实锤）
+	-- （路由器 busybox 的 sleep 不支持小数，只能用整秒）
+	os.execute("/etc/init.d/sing-box stop >/dev/null 2>&1")
+	for _ = 1, 5 do
+		if os.execute("pidof sing-box >/dev/null 2>&1") ~= 0 then break end
+		os.execute("sleep 1")
+	end
+	os.execute("/etc/init.d/sing-box start >/dev/null 2>&1")
+	-- 等新进程起来（最多 10 秒）；起不来补一次 start，再等 5 秒
+	local ok = false
+	for _ = 1, 10 do
+		if os.execute("pidof sing-box >/dev/null 2>&1") == 0 then ok = true break end
+		os.execute("sleep 1")
+	end
+	if not ok then os.execute("/etc/init.d/sing-box start >/dev/null 2>&1") end
+	for _ = 1, 5 do
+		if os.execute("pidof sing-box >/dev/null 2>&1") == 0 then ok = true break end
+		os.execute("sleep 1")
+	end
 	if enabled ~= "1" then
 		os.execute("uci set sing-box.main.enabled='0'; uci commit sing-box; /etc/init.d/sing-box disable >/dev/null 2>&1")
 	end
+	return ok
 end
 local rc = os.execute("pidof sing-box >/dev/null 2>&1")
 if rc == 0 then
-	restart_preserve_autostart()
-	log("sing-box 已重启生效。")
+	if restart_preserve_autostart() then
+		log("sing-box 已重启生效。")
+	else
+		log("sing-box 重启失败（进程未起来），请检查。")
+	end
 else
 	log("sing-box 未运行，未重启。")
 end
