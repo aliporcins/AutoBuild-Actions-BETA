@@ -399,7 +399,7 @@ PYEOF
 	# tree's config_generate drifts.
 	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
 	CG_FILE="package/base-files/files/bin/config_generate"
-	[ -f "$CG_FILE_FILE" ] || { echo "ERROR: config_generate missing from tree: $CG"; exit 1; }
+	[ -f "$CG_FILE" ] || { echo "ERROR: config_generate missing from tree: $CG_FILE"; exit 1; }
 	grep -qF "set system.@system[-1].timezone='GMT0'" "$CG_FILE" || { echo "ERROR: config_generate timezone default changed (expected GMT0)"; exit 1; }
 	grep -qF "set system.@system[-1].zonename='UTC'" "$CG_FILE" || { echo "ERROR: config_generate zonename default changed (expected UTC)"; exit 1; }
 	grep -qF "set system.@system[-1].hostname='OpenWrt'" "$CG_FILE" || { echo "ERROR: config_generate hostname default changed (expected OpenWrt)"; exit 1; }
