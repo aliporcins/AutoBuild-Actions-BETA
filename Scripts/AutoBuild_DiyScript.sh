@@ -402,7 +402,11 @@ PYEOF
 	[ -f "$CG_FILE" ] || { echo "ERROR: config_generate missing from tree: $CG_FILE"; exit 1; }
 	grep -qF "set system.@system[-1].timezone='GMT0'" "$CG_FILE" || { echo "ERROR: config_generate timezone default changed (expected GMT0)"; exit 1; }
 	grep -qF "set system.@system[-1].zonename='UTC'" "$CG_FILE" || { echo "ERROR: config_generate zonename default changed (expected UTC)"; exit 1; }
-	grep -qF "set system.@system[-1].hostname='OpenWrt'" "$CG_FILE" || { echo "ERROR: config_generate hostname default changed (expected OpenWrt)"; exit 1; }
+	# Hostname may ALREADY be ax6000 here: Firmware_Diy_Main runs BEFORE
+	# this block and applies the workflow's Tempoary_HOSTNAME=ax6000 first
+	# (run 45086622364, job log 10035). Accept either state; the sed below
+	# is a no-op when it is already ax6000.
+	(grep -qF "set system.@system[-1].hostname='OpenWrt'" "$CG_FILE" || grep -qF "set system.@system[-1].hostname='ax6000'" "$CG_FILE") || { echo "ERROR: config_generate hostname default changed (expected OpenWrt or ax6000)"; exit 1; }
 	sed -i "s/set system.@system\[-1\].timezone='GMT0'/set system.@system[-1].timezone='CST-8'/" "$CG_FILE"
 	sed -i "s/set system.@system\[-1\].zonename='UTC'/set system.@system[-1].zonename='Asia\/Shanghai'/" "$CG_FILE"
 	sed -i "s/set system.@system\[-1\].hostname='OpenWrt'/set system.@system[-1].hostname='ax6000'/" "$CG_FILE"
