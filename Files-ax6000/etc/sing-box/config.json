@@ -1,1 +1,242 @@
-{"dns": {"final": "remote", "rules": [{"rule_set": "geosite-cn", "server": "local"}, {"rule_set": "geosite-geolocation-!cn", "server": "remote"}], "servers": [{"server": "223.5.5.5", "tag": "local", "type": "udp"}, {"detour": "direct", "server": "1.1.1.1", "tag": "remote", "type": "https"}], "strategy": "ipv4_only"}, "experimental": {"cache_file": {"enabled": true}, "clash_api": {"external_controller": "127.0.0.1:9090"}}, "inbounds": [{"address": ["172.19.0.0/30"], "auto_route": true, "mtu": 1492, "route_exclude_address": ["192.168.2.0/24"], "stack": "gvisor", "strict_route": true, "tag": "tun-in", "type": "tun"}, {"listen": "127.0.0.1", "listen_port": 1080, "tag": "socks-in", "type": "socks"}], "log": {"level": "info", "timestamp": true}, "outbounds": [{"tag": "direct", "type": "direct"}, {"tag": "block", "type": "block"}], "route": {"auto_detect_interface": true, "final": "direct", "rule_set": [{"format": "binary", "path": "/etc/sing-box/geoip-cn.srs", "tag": "geoip-cn", "type": "local"}, {"format": "binary", "path": "/etc/sing-box/geosite-cn.srs", "tag": "geosite-cn", "type": "local"}, {"format": "binary", "path": "/etc/sing-box/geosite-nocn.srs", "tag": "geosite-geolocation-!cn", "type": "local"}], "rules": [{"action": "hijack-dns", "port": 53}, {"action": "sniff", "inbound": "tun-in", "timeout": "1s"}, {"domain_suffix": ["tailscale.com"], "outbound": "direct"}, {"outbound": "direct", "rule_set": "geosite-cn"}, {"outbound": "direct", "rule_set": "geoip-cn"}, {"outbound": "direct", "rule_set": "geosite-geolocation-!cn"}], "default_domain_resolver": {"server": "local"}}}
+{
+  "log": {
+    "timestamp": true,
+    "level": "info"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "udp",
+        "server": "223.5.5.5",
+        "tag": "local"
+      },
+      {
+        "server": "1.1.1.1",
+        "type": "https",
+        "detour": "warp-masque",
+        "tag": "remote"
+      }
+    ],
+    "rules": [
+      {
+        "domain_suffix": [
+          "orvibo.com"
+        ],
+        "server": "local"
+      },
+      {
+        "server": "local",
+        "rule_set": "geosite-cn"
+      },
+      {
+        "server": "remote",
+        "rule_set": "geosite-geolocation-!cn"
+      }
+    ],
+    "strategy": "ipv4_only",
+    "final": "remote"
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true
+    },
+    "clash_api": {
+      "external_controller": "127.0.0.1:9090"
+    }
+  },
+  "inbounds": [
+    {
+      "route_exclude_address": [
+        "192.168.2.4/32",
+        "192.168.2.0/24"
+      ],
+      "type": "tun",
+      "mtu": 1492,
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "gvisor",
+      "address": [
+        "172.19.0.0/30"
+      ],
+      "tag": "tun-in"
+    },
+    {
+      "listen": "127.0.0.1",
+      "type": "socks",
+      "listen_port": 1080,
+      "tag": "socks-in"
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "direct",
+      "type": "direct"
+    },
+    {
+      "ipv6": "2606:4700:110:8c71:8a42:94b:67b4:c34d/128",
+      "mtu": 1280,
+      "server_port": 443,
+      "ip": "172.16.0.2/32",
+      "profile": "cloudflare",
+      "private_key": "MHcCAQEEIFxR2EqoJK/wgpQnXXzqHtqjm2Sbl8q0gSIzVGBVDYjGoAoGCCqGSM49AwEHoUQDQgAEGCw9zU7SbT68UKGNARNYmCldBAZWQbFp2IDwzwMk6LsU1qSkRfUQQXwtJ2auxIDhosHVM8DUs21bHgg5yUHh4Q==",
+      "tag": "warp-masque",
+      "vhttp": "auto",
+      "public_key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEIaU7MToJm9NKp8YfGxR6r+/h4mcG7SxI8tsW8OR1A5tv/zCzVbCRRh2t87/kxnP6lAy0lkr7qYwu+ox+k3dr6w==",
+      "type": "masque",
+      "server": "162.159.198.2"
+    },
+    {
+      "type": "urltest",
+      "tag": "us",
+      "outbounds": [
+        "warp-masque"
+      ],
+      "url": "http://cp.cloudflare.com/generate_204",
+      "interval": "3m",
+      "tolerance": 50
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "final": "warp-masque",
+    "rule_set": [
+      {
+        "path": "/etc/sing-box/geoip-cn.srs",
+        "type": "local",
+        "format": "binary",
+        "tag": "geoip-cn"
+      },
+      {
+        "path": "/etc/sing-box/geosite-cn.srs",
+        "type": "local",
+        "format": "binary",
+        "tag": "geosite-cn"
+      },
+      {
+        "path": "/etc/sing-box/geosite-nocn.srs",
+        "type": "local",
+        "format": "binary",
+        "tag": "geosite-geolocation-!cn"
+      }
+    ],
+    "rules": [
+      {
+        "source_ip_cidr": [
+          "192.168.2.4/32"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "action": "hijack-dns",
+        "port": 53
+      },
+      {
+        "outbound": "direct",
+        "ip_cidr": [
+          "10.0.0.0/8",
+          "172.16.0.0/12",
+          "192.168.0.0/16"
+        ]
+      },
+      {
+        "inbound": "tun-in",
+        "action": "sniff",
+        "timeout": "1s"
+      },
+      {
+        "domain_suffix": [
+          "tailscale.com"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "domain_suffix": [
+          "openai.com",
+          "chatgpt.com",
+          "claude.ai",
+          "anthropic.com",
+          "gemini.google.com",
+          "generativelanguage.googleapis.com",
+          "ai.google.dev",
+          "deepseek.com",
+          "grok.com",
+          "x.ai",
+          "perplexity.ai",
+          "poe.com",
+          "midjourney.com",
+          "character.ai",
+          "huggingface.co",
+          "cohere.com",
+          "together.ai",
+          "openrouter.ai",
+          "cursor.com",
+          "replicate.com",
+          "stability.ai",
+          "runwayml.com",
+          "leonardo.ai",
+          "ideogram.ai"
+        ],
+        "outbound": "us"
+      },
+      {
+        "domain_suffix": [
+          "github.com",
+          "api.github.com",
+          "raw.githubusercontent.com",
+          "codeload.github.com",
+          "objects.githubusercontent.com",
+          "githubusercontent.com"
+        ],
+        "outbound": "us"
+      },
+      {
+        "outbound": "direct",
+        "rule_set": "geosite-cn"
+      },
+      {
+        "outbound": "direct",
+        "rule_set": "geoip-cn"
+      },
+      {
+        "outbound": "direct",
+        "ip_cidr": [
+          "43.159.190.22/32"
+        ]
+      },
+      {
+        "outbound": "direct",
+        "domain_suffix": [
+          "orvibo.com"
+        ]
+      },
+      {
+        "domain_suffix": [
+          "apple.com",
+          "icloud.com",
+          "mzstatic.com",
+          "cdn-apple.com"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "domain_suffix": [
+          "microsoft.com",
+          "windowsupdate.com",
+          "live.com",
+          "msftconnecttest.com",
+          "msftncsi.com",
+          "office.com",
+          "dl.delivery.mp.microsoft.com"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "outbound": "warp-masque",
+        "rule_set": "geosite-geolocation-!cn"
+      }
+    ],
+    "default_domain_resolver": {
+      "server": "local"
+    }
+  }
+}
