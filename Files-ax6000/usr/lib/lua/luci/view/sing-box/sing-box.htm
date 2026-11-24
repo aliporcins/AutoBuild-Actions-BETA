@@ -83,7 +83,7 @@ function sbTab(id) {
 <div class="cbi-value"><label class="cbi-value-title">SOCKS 监听</label><div class="cbi-value-field"><% if socks then %>127.0.0.1:1080 在监听<% else %>未监听<% end %></div></div>
 <div class="cbi-value"><label class="cbi-value-title">配置文件</label><div class="cbi-value-field"><%=conffile%></div></div>
 <div class="cbi-value"><label class="cbi-value-title">配置 MD5</label><div class="cbi-value-field"><%=md5%></div></div>
-<div class="cbi-value"><label class="cbi-value-title">配置校验</label><div class="cbi-value-field"><% if check_ok then %>通过<% else %>未通过<% end %></div></div>
+<div class="cbi-value"><label class="cbi-value-title">配置校验</label><div class="cbi-value-field"><% if check_ok then %>通过<% elseif check_ok == false then %>未通过<% else %>未校验（打开页面不再自动跑全量校验，点“立即校验”手动跑）<% end %><% if check_ts then %>（<%=check_ts%>）<% end %> <form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>" style="display:inline"><input type="hidden" name="action" value="check" /><input type="submit" class="cbi-button" value="立即校验" /></form></div></div>
 <div class="cbi-value"><label class="cbi-value-title">出站数 / 规则数</label><div class="cbi-value-field"><%=n_out%> / <%=n_rules%></div></div>
 <div class="cbi-value"><label class="cbi-value-title">默认出口</label><div class="cbi-value-field"><%=default_out%></div></div>
 <div class="cbi-value"><label class="cbi-value-title">Google 延迟</label><div class="cbi-value-field" id="lat-google"><% if lat_google ~= "" then %><%=lat_google%> 秒<% else %>—（测速中…）<% end %></div></div>
@@ -95,12 +95,12 @@ function sbTab(id) {
 <p class="sb-note">注意：隧道排除规则（102、VM、Tailscale）是保出口隧道的关键，详见“分流规则”页签里的保护规则，请勿删除。</p>
 
 <h3>分流方案</h3>
-<p class="sb-note">“<%=scheme_a_name%>”：国外流量走 warp-masque（稳定，不依赖订阅）。“<%=scheme_b_name%>”：国外流量走订阅节点（other 组自动选最快），warp-masque 兜底。AI 域名始终走 us 组，国内始终直连，切换只改国外流量这一条。</p>
-<div class="cbi-value"><label class="cbi-value-title">当前方案</label><div class="cbi-value-field"><% if scheme == "b" then %><b><%=scheme_b_name%></b><% elseif scheme == "a" then %><b><%=scheme_a_name%></b><% else %>未知（未找到国外流量规则）<% end %></div></div>
+<p class="sb-note">“<%=scheme_a_name%>”：国外流量走 warp-masque（稳定，不依赖订阅）。“<%=scheme_b_name%>”：国外流量走订阅节点（other 组自动选最快）<% if has_warp then %>，warp-masque 兜底<% end %>。AI 域名始终走 us 组，国内始终直连，切换只改国外流量这一条。<% if not has_warp then %>本机未配置 warp-masque（固件 starter 不含密钥），方案 A 暂不可用。<% end %></p>
+<div class="cbi-value"><label class="cbi-value-title">当前方案</label><div class="cbi-value-field"><% if scheme == "b" then %><b><%=scheme_b_name%></b><% elseif scheme == "a" then %><b><%=scheme_a_name%></b><% elseif scheme == "direct" then %>直连（国外流量未走代理）<% else %>未知（未找到国外流量规则）<% end %></div></div>
 <form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>" style="display:inline">
 	<input type="hidden" name="action" value="scheme" />
 	<input type="hidden" name="name" value="a" />
-	<input type="submit" class="cbi-button" value="切换到<%=scheme_a_name%>" <% if scheme == "a" then %>disabled="disabled"<% end %> />
+	<input type="submit" class="cbi-button" value="切换到<%=scheme_a_name%>" <% if scheme == "a" or not has_warp then %>disabled="disabled"<% end %> />
 </form>
 <form method="post" action="<%=luci.dispatcher.build_url("admin", "services", "sing-box", "action")%>" style="display:inline">
 	<input type="hidden" name="action" value="scheme" />
@@ -117,7 +117,7 @@ function sbTab(id) {
 <p class="sb-note">切换后自动校验配置并重启 sing-box（约几秒，期间代理短暂中断）。重启后各组需重新测速（约 1–3 分钟），测速完成前可能走次优节点或兜底，测速中的组显示“测速中…”。改名只改显示，不动规则。</p>
 
 <h3>当前选中节点（各组自动选最快）</h3>
-<p class="sb-note">us 组供 AI 域名用，<% if scheme == "b" then %>其他国外流量走订阅节点（other 组），warp-masque 兜底<% else %>其他国外流量走 warp-masque（默认出口）<% end %>。下表显示每个 urltest 组当前选中的节点。</p>
+<p class="sb-note">us 组供 AI 域名用，<% if scheme == "b" then %>其他国外流量走订阅节点（other 组）<% if has_warp then %>，warp-masque 兜底<% end %><% elseif scheme == "a" then %>其他国外流量走 warp-masque<% elseif scheme == "direct" then %>其他国外流量走 direct（未走代理）<% else %>其他国外流量走默认出口<% end %>。下表显示每个 urltest 组当前选中的节点。</p>
 <div id="sb-groups">加载中…</div>
 
 <h3>实时连接（按流量倒序，最多 30 条）</h3>
@@ -243,8 +243,8 @@ function sbTab(id) {
 <% elseif r.source_ip_cidr and r.source_ip_cidr[1] == "192.168.2.100/32" then %><span class="sb-protect">保护：VM 直连排除（保隧道）</span><br />
 <% elseif r.domain_suffix and table.getn(r.domain_suffix) == 1 and r.domain_suffix[1] == "tailscale.com" then %><span class="sb-protect">保护：Tailscale 直连（保隧道）</span><br />
 <% end %>
+<!-- 长域名列表只显示前 5 个，其余折叠进 title（鼠标悬停可见），避免单行撑宽表格 -->
 <%
--- 长域名列表只显示前 5 个，其余折叠进 title（鼠标悬停可见），避免单行撑宽表格
 local function short_list(prefix, list, max_n)
   if not list or table.getn(list) == 0 then return nil end
   local full = table.concat(list, ",")
@@ -314,6 +314,7 @@ local full_text = (r.source_ip_cidr and table.concat(r.source_ip_cidr, ",")) or 
 	<div class="cbi-value"><label class="cbi-value-title">匹配值</label><div class="cbi-value-field"><input type="text" name="value" size="50" placeholder="如 openai.com,claude.ai" /></div></div>
 	<div class="cbi-value"><label class="cbi-value-title">出口</label><div class="cbi-value-field">
 	<select name="outbound">
+	<option value="direct">direct（直连）</option>
 	<option value="warp-masque">warp-masque（MASQUE）</option>
 	<option value="us">us（美国组）</option>
 	<option value="hk">hk（香港组）</option>
@@ -321,13 +322,12 @@ local full_text = (r.source_ip_cidr and table.concat(r.source_ip_cidr, ",")) or 
 	<option value="tw">tw（台湾组）</option>
 	<option value="sg">sg（新加坡组）</option>
 	<option value="other">other（其他组）</option>
-	<option value="direct">direct（直连）</option>
 	<option value="block">block（拦截）</option>
 	</select>
 	</div></div>
 	<input type="submit" class="cbi-button cbi-button-apply" value="添加规则" />
 </form>
-<p class="sb-note">新规则会插到最后一条（国外 → warp-masque）之前。如需更靠前，请用 ↑ 按钮上移。默认已有：AI 域名 → us 组；国外 → warp-masque；国内（geosite-cn / geoip-cn）→ direct。</p>
+<p class="sb-note">新规则会插到最后一条（国外 → <%=default_out%>）之前。如需更靠前，请用 ↑ 按钮上移。默认已有：AI 域名 → us 组；国外 → <%=default_out%>；国内（geosite-cn / geoip-cn）→ direct。</p>
 </div>
 
 <!-- 高级（JSON） -->
