@@ -56,12 +56,12 @@ CONFIG_PACKAGE_zram-swap=y
 CONFIG_PACKAGE_kmod-lib-lz4=y
 CONFIG_PACKAGE_kmod-lib-lzo=y
 
-# Scheduler kmods REMOVED 2026-11-24 (lite firmware): these were for dae
-# traffic control, and daed is now disabled (# CONFIG_PACKAGE_daed is not
-# set). Verified 2026-11-24 via the live device apk reverse-deps: NOTHING
-# depends on kmod-sched-core or kmod-sched-bpf, so removing them is safe.
-# CONFIG_PACKAGE_kmod-sched-core is not set
-# CONFIG_PACKAGE_kmod-sched-bpf is not set
+# Scheduler kmods RESTORED 2026-11-25 (v2): the AX6000 also serves as a
+# main router (user confirmed 2026-11-25), so traffic control / QoS must
+# stay available. (Removed 2026-11-24 lite firmware as "AP-only" -- the
+# AP-only assumption was wrong.)
+CONFIG_PACKAGE_kmod-sched-core=y
+CONFIG_PACKAGE_kmod-sched-bpf=y
 
 # Official feeds
 # DDNS REMOVED 2026-11-21 (user decision: DDNS runs on the main router via Lucky;
@@ -212,14 +212,13 @@ CONFIG_NSS_DRV_VIRT_IF_ENABLE=y
 CONFIG_PACKAGE_kmod-ppp=y
 CONFIG_PACKAGE_kmod-pppoe=y
 CONFIG_PACKAGE_kmod-qca-nss-drv-pppoe=y
-# Userspace ppp REMOVED 2026-11-24 (lite firmware): the AX6000 is a pure AP
-# (WAN is DHCP from the main router) and never runs pppd. Verified
-# 2026-11-24 via the live device apk reverse-deps: NOTHING depends on the
-# `ppp` or `ppp-mod-pppoe` userspace packages (luci-proto-ppp needs only
-# libc). The kernel modules above STAY: kmod-qca-nss-ecm depends on
-# kmod-ppp/kmod-pppoe, so the kmods cannot go. Saves ~361KB installed.
-# CONFIG_PACKAGE_ppp is not set
-# CONFIG_PACKAGE_ppp-mod-pppoe is not set
+# Userspace ppp RESTORED 2026-11-25 (v2): the AX6000 also serves as a main
+# router (user confirmed 2026-11-25), so PPPoE dial-up (pppd) must stay
+# available. (Removed 2026-11-24 lite firmware as "AP-only", reverted --
+# the AP-only assumption was wrong. The kernel modules above stay
+# regardless: kmod-qca-nss-ecm depends on kmod-ppp/kmod-pppoe.)
+CONFIG_PACKAGE_ppp=y
+CONFIG_PACKAGE_ppp-mod-pppoe=y
 # ath11k with the NSS patches (Wi-Fi offload); the validated combination for
 # the wired plane as well.
 CONFIG_PACKAGE_MAC80211_NSS_SUPPORT=y
