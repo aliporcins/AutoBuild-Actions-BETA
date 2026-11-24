@@ -502,8 +502,21 @@ PYEOF
 	[ "$(md5sum files/usr/lib/lua/luci/view/sing-box/sing-box.htm | cut -d' ' -f1)" = "48e49fbda199a55fb73ac74b509b709d" ] || { echo "ERROR: sing-box view MD5 mismatch"; exit 1; }
 	[ "$(md5sum files/etc/sing-box/sub-refresh-cron.lua | cut -d' ' -f1)" = "3c9be3940f2b15c2cfcdb56e7baf797b" ] || { echo "ERROR: sing-box cron MD5 mismatch"; exit 1; }
 	python3 -c "import json; json.load(open('files/etc/sing-box/config.json'))" || { echo "ERROR: sing-box starter config is not valid JSON"; exit 1; }
-	! grep -q "private_key\|subscription\|vless\|uuid" files/etc/sing-box/config.json || { echo "ERROR: sing-box starter config contains a secret (must never enter firmware)"; exit 1; }
-	echo "sing-box overlay check OK: 10 files in tree files/, binary 76597000 B SHA256 verified, UI MD5s verified, starter config valid and secret-free"
+	# Secret policy (2026-11-24 lite firmware): node credentials and
+	# subscription tokens must NEVER enter firmware (no vless/uuid/
+	# password/token/subscription strings). The ONE exception is the
+	# warp-masque private_key, and only the AX6000's own key:
+	# rebuild_outbounds() preserves warp-masque from the existing
+	# config and adds it as the fallback member of the us/other
+	# urltest groups, so a starter without warp-masque would make the
+	# first subscription refresh produce a config referencing a
+	# nonexistent outbound and sing-box would fail to start. The key
+	# is pinned by SHA256 below -- any other key (e.g. the main
+	# router's) fails the build.
+	! grep -qi "subscription\|vless\|uuid\|password\|token" files/etc/sing-box/config.json || { echo "ERROR: sing-box starter config contains node credentials or a subscription (must never enter firmware)"; exit 1; }
+	WARP_KEY_HASH="$(python3 -c "import json,hashlib; c=json.load(open('files/etc/sing-box/config.json')); w=[o for o in c['outbounds'] if o.get('tag')=='warp-masque']; print(hashlib.sha256(w[0]['private_key'].encode()).hexdigest() if len(w)==1 and 'private_key' in w[0] else 'MISSING')")"
+	[ "$WARP_KEY_HASH" = "600101c6a834e4645346e6c07ab44f1a177b16300517a03398cfc1499e9e13d5" ] || { echo "ERROR: sing-box starter warp-masque private_key is not the AX6000 key (hash $WARP_KEY_HASH)"; exit 1; }
+	echo "sing-box overlay check OK: 10 files in tree files/, binary 76597000 B SHA256 verified, UI MD5s verified, starter config valid, warp key is the AX6000 key, no node credentials"
 	fi # end AX6000-only sing-box overlay
 
 	# OpenClash Meta core (2026-11-19, user decision) -- AX6000
@@ -513,14 +526,21 @@ PYEOF
 	# (pinned release, hash-verified) into the tree files/ overlay
 	# at the path OpenClash expects (/etc/openclash/core/clash_meta,
 	# per luci-app-openclash openclash_core.sh: meta_core_path).
-	# Source: MetaCubeX/mihomo Prerelease-Alpha 100ff73 linux-arm64.
-	# (Updated 2026-11-21 from v1.19.34; same 57,344,126 B size.) The binary is
+	# Source: MetaCubeX/mihomo Prerelease-Alpha c7af25c linux-arm64.
+	# (Updated 2026-11-24 from alpha-100ff73: the rolling Prerelease-Alpha
+	# release pruned the 100ff73 asset on 2026-11-24, so the old pin 404s;
+	# c7af25c is the current alpha, verified locally before pinning:
+	# .gz 20,699,230 B SHA256 ed32ca6d..., binary 57,409,662 B SHA256
+	# 5e7875e1.... No stable release is newer than alpha-100ff73
+	# (v1.19.34 is 2026-11-11, older than the Nov 20 alpha build), so
+	# the alpha channel is kept; this pin is NOT chased daily.)
+	# The binary is
 	# NOT vendored in the repo (57M is too large for the git-data API
 	# push; it is fetched here like the other externals). Fail fast
 	# if the download, the .gz hash, the size, the arch, or the
 	# binary hash does not match. Space: Lucky (~14M,
 	# incompressible) + cloudflared (~25M) removed frees ~39M
-	# uncompressed; mihomo is 57,344,126 B uncompressed but
+	# uncompressed; mihomo is 57,409,662 B uncompressed but
 	# xz-compresses to ~13.7M, so the squashfs SHRINKS ~7M and fits
 	# the 70.6M rootfs UBI volume with room to spare.
 	# x86_64 (main router) is amd64, NOT arm64: the arm64 binary
@@ -529,21 +549,49 @@ PYEOF
 	# first run (as the current production firmware does).
 	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
 	mkdir -p files/etc/openclash/core
-	MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/Prerelease-Alpha/mihomo-linux-arm64-alpha-100ff73.gz"
-	MIHOMO_GZ_SHA256="8e5dc782ce5a64a59584c31fde53168004889c99ec40e19758e2e9ad73b03f65"
-	curl -fsSL -o mihomo-linux-arm64-alpha-100ff73.gz "$MIHOMO_URL" || { echo "ERROR: mihomo download failed"; exit 1; }
-	echo "$MIHOMO_GZ_SHA256  mihomo-linux-arm64-alpha-100ff73.gz" | sha256sum -c - || { echo "ERROR: mihomo .gz SHA256 mismatch"; exit 1; }
-	gzip -dc mihomo-linux-arm64-alpha-100ff73.gz > files/etc/openclash/core/clash_meta || { echo "ERROR: mihomo gunzip failed"; exit 1; }
+	MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/Prerelease-Alpha/mihomo-linux-arm64-alpha-c7af25c.gz"
+	MIHOMO_GZ_SHA256="ed32ca6d4afa9b731265d524cee01e48a64076d2da8fcaf2d03c4d87d70ec0a6"
+	curl -fsSL -o mihomo-linux-arm64-alpha-c7af25c.gz "$MIHOMO_URL" || { echo "ERROR: mihomo download failed"; exit 1; }
+	echo "$MIHOMO_GZ_SHA256  mihomo-linux-arm64-alpha-c7af25c.gz" | sha256sum -c - || { echo "ERROR: mihomo .gz SHA256 mismatch"; exit 1; }
+	gzip -dc mihomo-linux-arm64-alpha-c7af25c.gz > files/etc/openclash/core/clash_meta || { echo "ERROR: mihomo gunzip failed"; exit 1; }
 	chmod 755 files/etc/openclash/core/clash_meta
-	rm -f mihomo-linux-arm64-alpha-100ff73.gz
+	rm -f mihomo-linux-arm64-alpha-c7af25c.gz
 	[ -f files/etc/openclash/core/clash_meta ] || { echo "ERROR: clash_meta missing from tree files/"; exit 1; }
 	[ -x files/etc/openclash/core/clash_meta ] || { echo "ERROR: clash_meta not executable in tree files/"; exit 1; }
-	[ "$(wc -c < files/etc/openclash/core/clash_meta)" -eq 57344126 ] || { echo "ERROR: clash_meta size changed (expected 57344126)"; exit 1; }
-	echo "aa782da8db1236f0253cd34b87c5a95c833fe4c6f308053cb83fcb62d059efba  files/etc/openclash/core/clash_meta" | sha256sum -c - || { echo "ERROR: clash_meta SHA256 mismatch"; exit 1; }
+	[ "$(wc -c < files/etc/openclash/core/clash_meta)" -eq 57409662 ] || { echo "ERROR: clash_meta size changed (expected 57409662)"; exit 1; }
+	echo "5e7875e13e34c5d6059588e1ab06522da933beb8c2afdbc24c26bf8f09a1a1b3  files/etc/openclash/core/clash_meta" | sha256sum -c - || { echo "ERROR: clash_meta SHA256 mismatch"; exit 1; }
 	file files/etc/openclash/core/clash_meta | grep -q "ARM aarch64" || { echo "ERROR: clash_meta is not ARM aarch64 ELF"; exit 1; }
 	file files/etc/openclash/core/clash_meta | grep -q "ELF 64-bit" || { echo "ERROR: clash_meta is not 64-bit ELF"; exit 1; }
-	echo "Meta core check OK: clash_meta 57344126 B, aarch64 ELF, SHA256 verified"
+	echo "Meta core check OK: clash_meta 57409662 B, aarch64 ELF, SHA256 verified"
 	fi # end AX6000-only mihomo arm64 core
+
+	# Clash kernel restore init (2026-11-24 lite firmware) -- AX6000
+	# (qualcommax) ONLY: bake /etc/init.d/clash-kernel-restore (START=98,
+	# runs before OpenClash START=99) so a deleted/whiteouted core is
+	# restored from ROM to /tmp on every boot. The 12MB overlay cannot
+	# hold the 57MB core, and the UI "delete core" leaves a whiteout
+	# that hides the ROM file (2026-11-24: the user deleted the core,
+	# overlay stayed 10.5MB free, the UI update kept failing with
+	# "No space left"). The script is idempotent and version-tolerant:
+	# it only restores when the core path is missing/empty/broken and
+	# never downgrades a core the user updated via the UI.
+	# The rc.d symlink is GENERATED here, not vendored (the git-data
+	# API push cannot carry symlinks -- same as sysupgrade-cleanup).
+	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
+	mkdir -p files/etc/init.d files/etc/rc.d
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/init.d/clash-kernel-restore" files/etc/init.d/clash-kernel-restore
+	ln -sf ../init.d/clash-kernel-restore files/etc/rc.d/S98clash-kernel-restore
+	chmod 755 files/etc/init.d/clash-kernel-restore
+	[ -f files/etc/init.d/clash-kernel-restore ] || { echo "ERROR: clash-kernel-restore init missing from tree files/"; exit 1; }
+	[ -x files/etc/init.d/clash-kernel-restore ] || { echo "ERROR: clash-kernel-restore init not executable in tree files/"; exit 1; }
+	[ -L files/etc/rc.d/S98clash-kernel-restore ] || { echo "ERROR: S98clash-kernel-restore is not a symlink in tree files/"; exit 1; }
+	[ "$(readlink files/etc/rc.d/S98clash-kernel-restore)" = "../init.d/clash-kernel-restore" ] || { echo "ERROR: S98clash-kernel-restore symlink target wrong"; exit 1; }
+	grep -q "^START=98$" files/etc/init.d/clash-kernel-restore || { echo "ERROR: clash-kernel-restore missing START=98"; exit 1; }
+	grep -q "/rom/etc/openclash/core/clash_meta" files/etc/init.d/clash-kernel-restore || { echo "ERROR: clash-kernel-restore missing ROM source path"; exit 1; }
+	grep -q "/tmp/clash-kernel-restore.log" files/etc/init.d/clash-kernel-restore || { echo "ERROR: clash-kernel-restore missing log path"; exit 1; }
+	sh -n files/etc/init.d/clash-kernel-restore || { echo "ERROR: clash-kernel-restore fails shell syntax check"; exit 1; }
+	echo "clash-kernel-restore check OK: init + rc.d symlink in tree files/"
+	fi # end AX6000-only clash-kernel-restore init
 
 	# pbr stop/start nft residue fix (2026-11-21, main-router next build).
 	# ROOT CAUSE (verified on the live main router 2026-11-21): pbr
