@@ -46,11 +46,22 @@ CONFIG_PACKAGE_kmod-tun=y
 # CONFIG_PACKAGE_wireguard-tools is not set
 # CONFIG_PACKAGE_luci-app-wireguard is not set
 
-# Scheduler kmods for dae traffic control: NET_SCH_INGRESS / NET_CLS_BPF /
-# NET_CLS_ACT are provided by these (daed's DEPENDS pulls them in too, but
-# select explicitly so defconfig enables the kernel options).
-CONFIG_PACKAGE_kmod-sched-core=y
-CONFIG_PACKAGE_kmod-sched-bpf=y
+# zram (2026-11-24 lite firmware): AX6000 has 422MB RAM; a running proxy
+# leaves only 23-50MB available and the LuCI UI crawls. zram compresses RAM
+# so the same 422MB goes further. kmod-lib-lz4 + kmod-lib-lzo are both
+# included so the zram init always finds a working algorithm (the 23.05
+# lzo-missing failure). Sizes are tiny (~30KB total).
+CONFIG_PACKAGE_kmod-zram=y
+CONFIG_PACKAGE_zram-swap=y
+CONFIG_PACKAGE_kmod-lib-lz4=y
+CONFIG_PACKAGE_kmod-lib-lzo=y
+
+# Scheduler kmods REMOVED 2026-11-24 (lite firmware): these were for dae
+# traffic control, and daed is now disabled (# CONFIG_PACKAGE_daed is not
+# set). Verified 2026-11-24 via the live device apk reverse-deps: NOTHING
+# depends on kmod-sched-core or kmod-sched-bpf, so removing them is safe.
+# CONFIG_PACKAGE_kmod-sched-core is not set
+# CONFIG_PACKAGE_kmod-sched-bpf is not set
 
 # Official feeds
 # DDNS REMOVED 2026-11-21 (user decision: DDNS runs on the main router via Lucky;
@@ -201,6 +212,14 @@ CONFIG_NSS_DRV_VIRT_IF_ENABLE=y
 CONFIG_PACKAGE_kmod-ppp=y
 CONFIG_PACKAGE_kmod-pppoe=y
 CONFIG_PACKAGE_kmod-qca-nss-drv-pppoe=y
+# Userspace ppp REMOVED 2026-11-24 (lite firmware): the AX6000 is a pure AP
+# (WAN is DHCP from the main router) and never runs pppd. Verified
+# 2026-11-24 via the live device apk reverse-deps: NOTHING depends on the
+# `ppp` or `ppp-mod-pppoe` userspace packages (luci-proto-ppp needs only
+# libc). The kernel modules above STAY: kmod-qca-nss-ecm depends on
+# kmod-ppp/kmod-pppoe, so the kmods cannot go. Saves ~361KB installed.
+# CONFIG_PACKAGE_ppp is not set
+# CONFIG_PACKAGE_ppp-mod-pppoe is not set
 # ath11k with the NSS patches (Wi-Fi offload); the validated combination for
 # the wired plane as well.
 CONFIG_PACKAGE_MAC80211_NSS_SUPPORT=y
