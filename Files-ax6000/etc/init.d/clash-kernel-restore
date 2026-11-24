@@ -1,0 +1,52 @@
+#!/bin/sh /etc/rc.common
+# Restore the OpenClash Meta core from ROM if it is missing (2026-11-24
+# lite firmware). Background: the 57MB clash_meta lives in the squashfs
+# ROM (/rom/etc/openclash/core/clash_meta) but the 12MB overlay cannot
+# hold a replacement, so the UI "delete core" leaves a whiteout that
+# hides the ROM file and OpenClash cannot start (2026-11-24: the user
+# deleted the core, overlay stayed 10.5MB free, the UI update kept
+# failing with "No space left"). This script runs at every boot (START=98,
+# before OpenClash START=99) and restores the core to /tmp (211MB tmpfs)
+# with a symlink at the path OpenClash expects.
+# Idempotent and version-tolerant: it only restores when the core is
+# MISSING or empty/broken. It does NOT enforce an exact size, so a core
+# the user updated via the UI is left alone, never downgraded.
+# The ROM file itself is the source of truth and is never modified.
+# Log: /tmp/clash-kernel-restore.log (tmpfs, cleared on reboot).
+START=98
+ROM=/rom/etc/openclash/core/clash_meta
+TMP=/tmp/clash_meta
+LINK=/etc/openclash/core/clash_meta
+LOG=/tmp/clash-kernel-restore.log
+
+start() {
+	{
+		echo "$(date '+%Y-%m-%d %H:%M:%S') clash-kernel-restore: start"
+		# Case 1: the core path already works (ROM file or a good symlink).
+		if [ -x "$LINK" ] && [ -s "$LINK" ]; then
+			echo "$(date '+%Y-%m-%d %H:%M:%S') clash-kernel-restore: OK, core present ($(wc -c < "$LINK" 2>/dev/null || echo ?) B), skip"
+			return 0
+		fi
+		# Case 2: /tmp copy already exists (script re-run in the same boot).
+		if [ -x "$TMP" ] && [ -s "$TMP" ]; then
+			ln -sf "$TMP" "$LINK"
+			echo "$(date '+%Y-%m-%d %H:%M:%S') clash-kernel-restore: relinked existing /tmp copy ($(wc -c < "$TMP") B)"
+			return 0
+		fi
+		# Case 3: restore from ROM.
+		if [ -x "$ROM" ] && [ -s "$ROM" ]; then
+			cp "$ROM" "$TMP" || { echo "$(date '+%Y-%m-%d %H:%M:%S') clash-kernel-restore: ERROR: copy from ROM failed"; return 0; }
+			chmod 755 "$TMP"
+			ln -sf "$TMP" "$LINK"
+			if [ -x "$LINK" ] && [ -s "$LINK" ]; then
+				echo "$(date '+%Y-%m-%d %H:%M:%S') clash-kernel-restore: restored from ROM ($(wc -c < "$TMP") B) -> $LINK"
+			else
+				echo "$(date '+%Y-%m-%d %H:%M:%S') clash-kernel-restore: ERROR: restore finished but link still unusable"
+			fi
+			return 0
+		fi
+		# Case 4: no usable core anywhere; do not block boot.
+		echo "$(date '+%Y-%m-%d %H:%M:%S') clash-kernel-restore: ERROR: no core in ROM ($ROM) nor /tmp; OpenClash will fail to start"
+		return 0
+	} >> "$LOG" 2>&1
+}
