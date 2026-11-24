@@ -459,9 +459,12 @@ PYEOF
 	# the "type": "masque" outbound for Cloudflare WARP exists only in
 	# this fork -- the feed sing-box-tiny lacks it, so it was removed
 	# from Configs/xiaomi_ax6000_nss) + the LuCI sing-box UI
-	# (controller/view, same files as the main router) + the
-	# subscription auto-refresh cron + a starter config (direct-only,
-	# NO subscriptions, NO keys -- the user adds those after flashing)
+	# (controller/view, AX6000-only variant since 2026-11-25 v2: page
+	# load no longer runs a full sing-box check, warp-masque is optional;
+	# the main router still runs the unpatched UI) + the
+	# subscription auto-refresh cron + a keyless starter config (direct
+	# + urltest skeleton, NO subscriptions, NO keys -- the user adds
+	# those after flashing)
 	# + the geoip/geosite rule sets + the procd init script + UCI
 	# config (enabled=0 by default; the UI's Start button turns it on).
 	# The binary is NOT vendored in the repo (76,597,000 B is too large
@@ -498,25 +501,42 @@ PYEOF
 	[ -x files/etc/init.d/sing-box ] || { echo "ERROR: sing-box init not executable in tree files/"; exit 1; }
 	[ "$(stat -c%s files/usr/bin/sing-box)" -eq 76597000 ] || { echo "ERROR: sing-box binary size changed (expected 76597000)"; exit 1; }
 	[ "$(sha256sum files/usr/bin/sing-box | cut -d' ' -f1)" = "1f32fe4525db7b8dad55c9a744167af235e0e527b75221e090cd90d6c6254175" ] || { echo "ERROR: sing-box binary SHA256 mismatch"; exit 1; }
-	[ "$(md5sum files/usr/lib/lua/luci/controller/sing-box.lua | cut -d' ' -f1)" = "7472cd81223b59b866f3030444ad1a04" ] || { echo "ERROR: sing-box controller MD5 mismatch"; exit 1; }
-	[ "$(md5sum files/usr/lib/lua/luci/view/sing-box/sing-box.htm | cut -d' ' -f1)" = "48e49fbda199a55fb73ac74b509b709d" ] || { echo "ERROR: sing-box view MD5 mismatch"; exit 1; }
+	[ "$(md5sum files/usr/lib/lua/luci/controller/sing-box.lua | cut -d' ' -f1)" = "849669eaaed2c1a86050b4a1100e8933" ] || { echo "ERROR: sing-box controller MD5 mismatch"; exit 1; }
+	[ "$(md5sum files/usr/lib/lua/luci/view/sing-box/sing-box.htm | cut -d' ' -f1)" = "5dca79dc7372cbb122c439b00b8e8b4c" ] || { echo "ERROR: sing-box view MD5 mismatch"; exit 1; }
 	[ "$(md5sum files/etc/sing-box/sub-refresh-cron.lua | cut -d' ' -f1)" = "3c9be3940f2b15c2cfcdb56e7baf797b" ] || { echo "ERROR: sing-box cron MD5 mismatch"; exit 1; }
 	python3 -c "import json; json.load(open('files/etc/sing-box/config.json'))" || { echo "ERROR: sing-box starter config is not valid JSON"; exit 1; }
-	# Secret policy (2026-11-24 lite firmware): node credentials and
-	# subscription tokens must NEVER enter firmware (no vless/uuid/
-	# password/token/subscription strings). The ONE exception is the
-	# warp-masque private_key, and only the AX6000's own key:
-	# rebuild_outbounds() preserves warp-masque from the existing
-	# config and adds it as the fallback member of the us/other
-	# urltest groups, so a starter without warp-masque would make the
-	# first subscription refresh produce a config referencing a
-	# nonexistent outbound and sing-box would fail to start. The key
-	# is pinned by SHA256 below -- any other key (e.g. the main
-	# router's) fails the build.
-	! grep -qi "subscription\|vless\|uuid\|password\|token" files/etc/sing-box/config.json || { echo "ERROR: sing-box starter config contains node credentials or a subscription (must never enter firmware)"; exit 1; }
-	WARP_KEY_HASH="$(python3 -c "import json,hashlib; c=json.load(open('files/etc/sing-box/config.json')); w=[o for o in c['outbounds'] if o.get('tag')=='warp-masque']; print(hashlib.sha256(w[0]['private_key'].encode()).hexdigest() if len(w)==1 and 'private_key' in w[0] else 'MISSING')")"
-	[ "$WARP_KEY_HASH" = "600101c6a834e4645346e6c07ab44f1a177b16300517a03398cfc1499e9e13d5" ] || { echo "ERROR: sing-box starter warp-masque private_key is not the AX6000 key (hash $WARP_KEY_HASH)"; exit 1; }
-	echo "sing-box overlay check OK: 10 files in tree files/, binary 76597000 B SHA256 verified, UI MD5s verified, starter config valid, warp key is the AX6000 key, no node credentials"
+	# Secret policy (2026-11-25 v2): NO credentials of any kind in firmware.
+	# The starter config must not contain private_key / subscription /
+	# vless / uuid / password / token strings at all. The warp-masque
+	# outbound was removed from the starter: the AX6000's own WARP key
+	# leaked with the public 2026-11-24 release (run 45433764272), so no
+	# key is baked in anymore. The live device keeps its own key via
+	# sysupgrade-preserved /etc/sing-box/config.json, never via firmware.
+	# The controller guards (rebuild_outbounds / ensure_other_backup /
+	# scheme switch) handle a missing warp-masque, so a keyless starter
+	# still refreshes and starts normally after the user adds subscriptions.
+	! grep -qi "subscription\|vless\|uuid\|password\|token\|private_key" files/etc/sing-box/config.json || { echo "ERROR: sing-box starter config contains credentials (must never enter firmware)"; exit 1; }
+	# Structural check: every referenced outbound must exist (a dangling
+	# reference would make sing-box fail to start on first boot).
+	python3 - <<'PYEOF' || { echo "ERROR: sing-box starter config structure invalid"; exit 1; }
+import json
+c = json.load(open('files/etc/sing-box/config.json'))
+tags = {o['tag'] for o in c['outbounds']}
+assert c['route']['final'] in tags, 'final outbound missing'
+for r in c['route']['rules']:
+    if 'outbound' in r:
+        assert r['outbound'] in tags, 'rule outbound %s missing' % r['outbound']
+for s in c.get('dns', {}).get('servers', []):
+    assert 'detour' not in s, 'dns server still has a detour'
+for o in c['outbounds']:
+    if o['type'] == 'urltest':
+        assert o.get('outbounds'), 'urltest %s has no members' % o['tag']
+        for mm in o['outbounds']:
+            assert mm in tags, 'urltest member %s missing' % mm
+assert 'warp-masque' not in tags, 'starter must not contain warp-masque'
+print('starter structure OK: outbounds', sorted(tags))
+PYEOF
+	echo "sing-box overlay check OK: 10 files in tree files/, binary 76597000 B SHA256 verified, UI MD5s verified, starter config valid, no credentials"
 	fi # end AX6000-only sing-box overlay
 
 	# OpenClash Meta core (2026-11-19, user decision) -- AX6000
