@@ -339,12 +339,14 @@ jobs:
         for pkg in kmod-zram zram-swap kmod-lib-lz4 kmod-lib-lzo; do
           grep -q "^CONFIG_PACKAGE_${pkg}=y" .config || { echo "ERROR: CONFIG_PACKAGE_${pkg} dropped by defconfig (lite firmware needs zram)"; exit 1; }
         done
-        # LITE firmware (2026-11-24): these must stay OFF after defconfig
-        # (removed: sched kmods were for daed, now disabled; ppp userspace
-        # is unused on a pure AP). A silent re-select (hard dependency)
-        # would mean the removal is not actually safe -- fail loudly.
+        # (2026-11-25 v2): sched + ppp userspace must stay ON after
+        # defconfig -- the AX6000 also serves as a main router (user
+        # confirmed 2026-11-25), so PPPoE dial-up and traffic control
+        # must survive. (Removed 2026-11-24 as "AP-only", reverted.)
+        # A silent drop by defconfig would ship a main router without
+        # dial-up -- fail loudly.
         for pkg in kmod-sched-core kmod-sched-bpf ppp ppp-mod-pppoe; do
-          grep -q "^CONFIG_PACKAGE_${pkg}=y" .config && { echo "ERROR: CONFIG_PACKAGE_${pkg} re-selected by defconfig (lite removal failed)"; exit 1; }
+          grep -q "^CONFIG_PACKAGE_${pkg}=y" .config || { echo "ERROR: CONFIG_PACKAGE_${pkg} dropped by defconfig (main-router firmware needs sched/ppp)"; exit 1; }
         done
         make download -j$(nproc)
 
