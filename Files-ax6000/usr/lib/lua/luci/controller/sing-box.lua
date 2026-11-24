@@ -1,7 +1,9 @@
 -- LuCI 控制器：sing-box 管理页（状态 / 节点 / 订阅 / 规则 / 高级 五页签）
 -- 后端用 Lua + luci.jsonc；订阅解析、节点分组、规则编辑全在路由器本地完成。
 -- config.json 只在用户保存且 sing-box check 通过后才原子替换。
--- 红线：warp-masque 出口、DNS final=remote、102 排除（第一条）绝不动；
+-- 红线：DNS final=remote、102 排除（第一条）绝不动；warp-masque 出口仅在
+-- 配置里存在时可用——固件 starter 不含它（无密钥），相关逻辑必须先判
+-- 存在再引用（见 has_outbound / rebuild_outbounds / ensure_other_backup）。
 -- VM 排除（192.168.2.100/32）与 Tailscale 排除（tailscale.com）是保隧道的默认规则，
 -- 页面上标为“保护规则”，102 排除不可删、不可移位。
 module("luci.controller.sing-box", package.seeall)
@@ -56,9 +58,37 @@ local function urldecode(s)
 	return s
 end
 
+-- ---------- 校验结果缓存 ----------
+-- 页面打开不再同步跑全量 sing-box check（106K 配置、173 节点时该进程
+-- VSZ 约 1.3G，在 AX6000 仅剩 20M 可用内存时卡死 D 状态；2026-11-24
+-- 实锤）。校验结果改为缓存：每次保存/刷新/手动校验后写入，页面只读
+-- 缓存显示；无缓存显示“未校验”。
+local CHECK_CACHE = "/tmp/sing-box-check.cache"  -- 内容：ok|fail + 空格 + 时间
+local function read_check_cache()
+	local s = read_file(CHECK_CACHE)
+	if not s or s == "" then return nil, nil end
+	s = s:gsub("%s+$", "")
+	local st, ts = s:match("^(%S+)%s+(.+)$")
+	if st == "ok" then return true, ts end
+	if st == "fail" then return false, ts end
+	return nil, nil
+end
+local function write_check_cache(ok)
+	write_file(CHECK_CACHE, (ok and "ok" or "fail") .. " " .. os.date("%Y-%m-%d %H:%M:%S"))
+end
+
+-- 配置里是否存在某出站（warp-masque 只在用户导入的配置里有；
+-- 固件 starter 不含它，相关逻辑必须先判存在再引用）
+local function has_outbound(cfg, tag)
+	if not cfg or not cfg.outbounds then return false end
+	for _, ob in ipairs(cfg.outbounds) do if ob.tag == tag then return true end end
+	return false
+end
+
 -- ---------- 分流方案 A/B ----------
 -- 国外流量规则（geosite geolocation-!cn）的出口决定当前方案：
--- warp-masque = 方案 A，other = 方案 B；找不到规则返回 nil
+-- warp-masque = 方案 A，other = 方案 B，direct = 直连（未走代理）；
+-- 找不到规则返回 nil
 local function foreign_rule_index(cfg)
 	if not cfg or not cfg.route or not cfg.route.rules then return nil end
 	for i, r in ipairs(cfg.route.rules) do
@@ -82,6 +112,7 @@ local function current_scheme()
 	local out = cfg.route.rules[idx].outbound or ""
 	if out == "other" then return "b" end
 	if out == "warp-masque" then return "a" end
+	if out == "direct" then return "direct" end
 	return nil
 end
 
@@ -96,7 +127,10 @@ local function scheme_names()
 end
 
 -- 确保 other 组含 warp-masque（方案 B 的兜底）；缺失时补上，返回是否改动
+-- 无 warp-masque 出口时不补（starter 配置不含密钥；缺了它往组里加只会
+-- 造出引用不存在出口的非法配置，校验必失败）
 local function ensure_other_backup(cfg)
+	if not has_outbound(cfg, "warp-masque") then return false end
 	local changed = false
 	for _, ob in ipairs(cfg.outbounds or {}) do
 		if ob.tag == "other" and ob.type == "urltest" then
@@ -137,6 +171,7 @@ local function save_config_checked(cfg_table)
 	local mode = (sys.exec("stat -c %a " .. CONFFILE .. " 2>/dev/null") or ""):gsub("%s+$", "")
 	if mode ~= "" then sys.call("chmod " .. mode .. " " .. TMPFILE .. " 2>/dev/null") end
 	local rc = sys.call(PROG .. " check -c " .. TMPFILE .. " >" .. CHECKOUT .. " 2>&1")
+	write_check_cache(rc == 0)
 	if rc == 0 then
 		sys.call("mv " .. TMPFILE .. " " .. CONFFILE)
 		return true, nil
@@ -218,7 +253,9 @@ local function get_state()
 	local md5 = (sys.exec("md5sum " .. conffile .. " 2>/dev/null") or ""):match("^(%x+)") or ""
 	local socks = sys.call("(ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null) | grep -q '127.0.0.1:1080'") == 0
 	local tun0 = sys.call("ip link show tun0 >/dev/null 2>&1") == 0
-	local check_ok = sys.call(PROG .. " check -c " .. conffile .. " >/dev/null 2>&1") == 0
+	-- 校验状态只读缓存，不在页面加载时同步跑全量 check（会卡死设备，
+	-- 见 CHECK_CACHE；手动校验见 action "check"）
+	local check_ok, check_ts = read_check_cache()
 	local config_text = read_file(conffile) or ""
 	local cfg = read_json(conffile)
 	local n_out = 0
@@ -240,7 +277,8 @@ local function get_state()
 	return {
 		running = running, pid = pid, uptime = uptime, sb_version = sb_version,
 		enabled = enabled, user = user, conffile = conffile, md5 = md5,
-		socks = socks, tun0 = tun0, check_ok = check_ok, config_text = config_text,
+		socks = socks, tun0 = tun0, check_ok = check_ok, check_ts = check_ts,
+		has_warp = has_outbound(cfg, "warp-masque"), config_text = config_text,
 		n_out = n_out, n_rules = n_rules, default_out = default_out,
 		lat_google = lat_google, lat_yt = lat_yt,
 		scheme = current_scheme(), sub_auto = sub_auto_enabled(),
@@ -566,12 +604,15 @@ local function rebuild_outbounds(all_nodes)
 		end
 		new_out[#new_out + 1] = clean
 	end
+	-- warp-masque 兜底只在配置里真有该出口时加（starter 无密钥、无此出口；
+	-- 无出口还往组里加会造出非法配置，校验必失败）
+	local has_warp = has_outbound(cfg, "warp-masque")
 	for _, g in ipairs({"us", "hk", "jp", "tw", "sg", "other"}) do
 		if #groups[g] > 0 then
 			-- us / other 组保留 warp-masque 兜底（订阅节点全挂时自动切 warp）
 			local members = {}
 			for _, t in ipairs(groups[g]) do members[#members + 1] = t end
-			if g == "us" or g == "other" then members[#members + 1] = "warp-masque" end
+			if (g == "us" or g == "other") and has_warp then members[#members + 1] = "warp-masque" end
 			new_out[#new_out + 1] = {
 				type = "urltest", tag = g,
 				outbounds = members,
@@ -821,6 +862,18 @@ function action()
 		http.prepare_content("application/json")
 		http.write_json(doc)
 		return
+	elseif act == "check" then
+		-- 手动校验（按需触发）：页面打开不再自动跑全量 check，点“立即校验”才跑
+		local rc = sys.call(PROG .. " check -c " .. CONFFILE .. " >" .. CHECKOUT .. " 2>&1")
+		write_check_cache(rc == 0)
+		st = get_state()
+		if rc == 0 then st.message = "配置校验通过。"
+		else
+			local out = read_file(CHECKOUT) or ""
+			if #out > 2000 then out = out:sub(1, 2000) .. "……" end
+			st.errmsg = "配置校验未通过。"
+			st.check_output = out
+		end
 	elseif act == "save_config" then
 		local content = http.formvalue("config") or ""
 		if content == "" then
@@ -834,6 +887,7 @@ function action()
 				local mode = (sys.exec("stat -c %a " .. CONFFILE .. " 2>/dev/null") or ""):gsub("%s+$", "")
 				if mode ~= "" then sys.call("chmod " .. mode .. " " .. TMPFILE .. " 2>/dev/null") end
 				local rc = sys.call(PROG .. " check -c " .. TMPFILE .. " >" .. CHECKOUT .. " 2>&1")
+				write_check_cache(rc == 0)
 				if rc == 0 then
 					sys.call("mv " .. TMPFILE .. " " .. CONFFILE)
 					st = get_state()
@@ -1045,6 +1099,8 @@ function action()
 			local idx = foreign_rule_index(cfg)
 			if not idx then
 				st.errmsg = "未找到国外流量规则（geolocation-!cn），无法切换。"
+			elseif want ~= "b" and not has_outbound(cfg, "warp-masque") then
+				st.errmsg = "本机未配置 warp-masque（固件 starter 不含密钥），无法切换到方案 A；请先添加订阅并用方案 B。"
 			else
 				local target = (want == "b") and "other" or "warp-masque"
 				cfg.route.rules[idx].outbound = target
@@ -1088,13 +1144,15 @@ function action()
 	elseif act == "rule_add" then
 		local kind = http.formvalue("kind") or "domain_suffix"
 		local value = (http.formvalue("value") or ""):gsub("^%s+", ""):gsub("%s+$", "")
-		local outbound = http.formvalue("outbound") or "warp-masque"
+		local outbound = http.formvalue("outbound") or "direct"
 		if value == "" then
 			st.errmsg = "匹配值不能为空，未添加。"
 		else
 			local cfg = read_json(CONFFILE)
 			if not cfg then
 				st.errmsg = "读取配置失败。"
+			elseif outbound ~= "direct" and outbound ~= "block" and not has_outbound(cfg, outbound) then
+				st.errmsg = "出口“" .. outbound .. "”不存在（请先添加对应节点/出口，或选 direct）。"
 			else
 				local rule = {outbound = outbound}
 				if kind == "domain_suffix" then
