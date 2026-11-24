@@ -13,7 +13,6 @@
       {
         "server": "1.1.1.1",
         "type": "https",
-        "detour": "warp-masque",
         "tag": "remote"
       }
     ],
@@ -73,23 +72,10 @@
       "type": "direct"
     },
     {
-      "ipv6": "2606:4700:110:8c71:8a42:94b:67b4:c34d/128",
-      "mtu": 1280,
-      "server_port": 443,
-      "ip": "172.16.0.2/32",
-      "profile": "cloudflare",
-      "private_key": "MHcCAQEEIFxR2EqoJK/wgpQnXXzqHtqjm2Sbl8q0gSIzVGBVDYjGoAoGCCqGSM49AwEHoUQDQgAEGCw9zU7SbT68UKGNARNYmCldBAZWQbFp2IDwzwMk6LsU1qSkRfUQQXwtJ2auxIDhosHVM8DUs21bHgg5yUHh4Q==",
-      "tag": "warp-masque",
-      "vhttp": "auto",
-      "public_key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEIaU7MToJm9NKp8YfGxR6r+/h4mcG7SxI8tsW8OR1A5tv/zCzVbCRRh2t87/kxnP6lAy0lkr7qYwu+ox+k3dr6w==",
-      "type": "masque",
-      "server": "162.159.198.2"
-    },
-    {
       "type": "urltest",
       "tag": "us",
       "outbounds": [
-        "warp-masque"
+        "direct"
       ],
       "url": "http://cp.cloudflare.com/generate_204",
       "interval": "3m",
@@ -98,7 +84,7 @@
   ],
   "route": {
     "auto_detect_interface": true,
-    "final": "warp-masque",
+    "final": "direct",
     "rule_set": [
       {
         "path": "/etc/sing-box/geoip-cn.srs",
@@ -231,7 +217,7 @@
         "outbound": "direct"
       },
       {
-        "outbound": "warp-masque",
+        "outbound": "direct",
         "rule_set": "geosite-geolocation-!cn"
       }
     ],
