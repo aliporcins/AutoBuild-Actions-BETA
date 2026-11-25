@@ -1,0 +1,26 @@
+# luci-app-openclash backup list -- AX6000 lite firmware override
+# (2026-11-25 v3). The package ships "/etc/openclash/" (whole dir),
+# which drags the 10MB GeoSite.dat + rule_provider + mmdb + history
+# into the sysupgrade backup (~11.5MB total); on 22MB free RAM the
+# save stage hung ~10 min and the v2 flash died before writing
+# (2026-11-25). Keep only small user data. The big files are NOT
+# listed and are restored after upgrade:
+# - GeoSite.dat (10MB): re-downloaded by OpenClash on first run.
+# - clash_meta binary (57MB): baked into the image (/rom), restored
+#   to /tmp on every boot by /etc/init.d/clash-kernel-restore.
+# - cache.db: symlink to history/lj.db, recreated by OpenClash.
+# The glob below is expanded by the shell in list_static_conffiles
+# (/sbin/sysupgrade), so new *.yaml subscription files are picked up
+# automatically; a non-matching glob contributes nothing.
+/etc/openclash/config/*.yaml
+/etc/openclash/fy.yaml
+/etc/openclash/lj.yaml
+/etc/openclash/custom/
+/etc/openclash/overwrite/
+/etc/openclash/history/
+/etc/openclash/rule_provider/
+/etc/openclash/Country.mmdb
+/etc/openclash/china_ip_route.ipset
+/etc/openclash/china_ip6_route.ipset
+/etc/openclash/cache.db
+/etc/openclash/clash

@@ -420,20 +420,30 @@ PYEOF
 
 	# sysupgrade backup + leftover cleanup (2026-11-23 fixed firmware)
 	# -- AX6000 (qualcommax) ONLY. Two parts:
-	# (a) /etc/sysupgrade.conf: add the user configs no keep.d entry
-	#     or package conffile covers (/etc/openclash/config/ +
-	#     /etc/sing-box/config.json) so "keep settings" preserves
-	#     them. The 57MB clash_meta binary + 10MB GeoSite.dat are
-	#     baked into the image and are NOT in the backup.
+	# (a) /etc/sysupgrade.conf + the OpenClash keep.d override: add
+	#     the user configs no keep.d entry or package conffile covers
+	#     (/etc/openclash/config/*.yaml + /etc/sing-box/config.json)
+	#     so "keep settings" preserves them. The 57MB clash_meta
+	#     binary + 10MB GeoSite.dat are baked into the image / are
+	#     re-downloaded and are NOT in the backup.
+	#     (2026-11-25 v3: the old "/etc/openclash/config/" dir line
+	#     plus the package's own "/etc/openclash/" keep.d entry
+	#     together dragged ~11.5MB into the backup tar; on 22MB free
+	#     RAM the save stage hung ~10 min and the v2 flash died
+	#     before writing. Both lists now name small files only --
+	#     the keep.d override replaces the package's whole-dir entry
+	#     via the files/ overlay, which is copied after package
+	#     files and therefore wins.)
 	# (b) /etc/init.d/sysupgrade-cleanup (+ rc.d symlink): delete
 	#     /overlay/sysupgrade.tgz on EVERY boot. OpenWrt's NAND
 	#     sysupgrade moves the backup tarball to the rootfs_data
 	#     volume and never deletes it after restore; the one-shot
 	#     99-firstboot-init delete only covers the first flash.
 	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
-	mkdir -p files/etc files/etc/init.d files/etc/rc.d
+	mkdir -p files/etc files/etc/init.d files/etc/rc.d files/lib/upgrade/keep.d
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/sysupgrade.conf" files/etc/sysupgrade.conf
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/init.d/sysupgrade-cleanup" files/etc/init.d/sysupgrade-cleanup
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/lib/upgrade/keep.d/luci-app-openclash" files/lib/upgrade/keep.d/luci-app-openclash
 	# The rc.d symlink is GENERATED here, not vendored in the repo:
 	# the git-data API push used for this repo cannot carry symlinks,
 	# so there is no Files-ax6000/etc/rc.d/ in git. ln -sf creates
@@ -445,13 +455,21 @@ PYEOF
 	[ -x files/etc/init.d/sysupgrade-cleanup ] || { echo "ERROR: sysupgrade-cleanup init not executable in tree files/"; exit 1; }
 	[ -L files/etc/rc.d/S99sysupgrade-cleanup ] || { echo "ERROR: S99sysupgrade-cleanup is not a symlink in tree files/"; exit 1; }
 	[ "$(readlink files/etc/rc.d/S99sysupgrade-cleanup)" = "../init.d/sysupgrade-cleanup" ] || { echo "ERROR: S99sysupgrade-cleanup symlink target wrong"; exit 1; }
-	grep -q "^/etc/openclash/config/$" files/etc/sysupgrade.conf || { echo "ERROR: sysupgrade.conf missing /etc/openclash/config/"; exit 1; }
+	grep -Fq '/etc/openclash/config/*.yaml' files/etc/sysupgrade.conf || { echo "ERROR: sysupgrade.conf missing /etc/openclash/config/*.yaml"; exit 1; }
 	grep -q "^/etc/sing-box/config.json$" files/etc/sysupgrade.conf || { echo "ERROR: sysupgrade.conf missing /etc/sing-box/config.json"; exit 1; }
+	! grep -q "^/etc/openclash/config/$" files/etc/sysupgrade.conf || { echo "ERROR: sysupgrade.conf must not list bare /etc/openclash/config/ dir (use the *.yaml glob)"; exit 1; }
 	! grep -q "^/etc/openclash/$" files/etc/sysupgrade.conf || { echo "ERROR: sysupgrade.conf must not list bare /etc/openclash/ (57MB binary)"; exit 1; }
+	[ -f files/lib/upgrade/keep.d/luci-app-openclash ] || { echo "ERROR: openclash keep.d override missing from tree files/"; exit 1; }
+	! grep -q "^/etc/openclash/$" files/lib/upgrade/keep.d/luci-app-openclash || { echo "ERROR: openclash keep.d must not list bare /etc/openclash/ (10MB GeoSite.dat)"; exit 1; }
+	! grep -v '^#' files/lib/upgrade/keep.d/luci-app-openclash | grep -q "GeoSite" || { echo "ERROR: openclash keep.d must not list GeoSite.dat"; exit 1; }
+	! grep -v '^#' files/lib/upgrade/keep.d/luci-app-openclash | grep -q "clash_meta" || { echo "ERROR: openclash keep.d must not list clash_meta"; exit 1; }
+	grep -Fq '/etc/openclash/config/*.yaml' files/lib/upgrade/keep.d/luci-app-openclash || { echo "ERROR: openclash keep.d missing config/*.yaml"; exit 1; }
+	grep -Fq '/etc/openclash/custom/' files/lib/upgrade/keep.d/luci-app-openclash || { echo "ERROR: openclash keep.d missing custom/"; exit 1; }
+	grep -Fq '/etc/openclash/overwrite/' files/lib/upgrade/keep.d/luci-app-openclash || { echo "ERROR: openclash keep.d missing overwrite/"; exit 1; }
 	grep -q "rm -f /overlay/sysupgrade.tgz" files/etc/init.d/sysupgrade-cleanup || { echo "ERROR: sysupgrade-cleanup missing rm /overlay/sysupgrade.tgz"; exit 1; }
 	grep -q "^START=99$" files/etc/init.d/sysupgrade-cleanup || { echo "ERROR: sysupgrade-cleanup missing START=99"; exit 1; }
 	sh -n files/etc/init.d/sysupgrade-cleanup || { echo "ERROR: sysupgrade-cleanup fails shell syntax check"; exit 1; }
-	echo "sysupgrade backup+cleanup check OK: sysupgrade.conf + cleanup init + rc.d symlink in tree files/"
+	echo "sysupgrade backup+cleanup check OK: sysupgrade.conf + openclash keep.d override + cleanup init + rc.d symlink in tree files/"
 	fi # end AX6000-only sysupgrade backup+cleanup
 
 	# sing-box-lx (2026-11-22) -- AX6000 (qualcommax) ONLY: bake the
