@@ -360,7 +360,12 @@ jobs:
     - name: Refresh API (1/2)
       if: env.UPLOAD_RELEASES == 'true' && steps.compile.outcome == 'success' && !cancelled()
       run: |
-        wget https://api.github.com/repos/${{github.repository}}/releases/tags/AutoUpdate -O API
+        # fix 2026-11-25: unauthenticated api.github.com calls are limited to 60/h per
+        # runner IP; run 45519214973 (ax6000_nss) failed here with "403 rate limit
+        # exceeded" after a successful compile+upload. Authenticate with the
+        # built-in token (5000/h limit). GitHub Actions masks secrets.GITHUB_TOKEN
+        # in logs automatically.
+        wget --header="Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/${{github.repository}}/releases/tags/AutoUpdate -O API
         
     - name: Refresh API (2/2)
       if: env.UPLOAD_RELEASES == 'true' && steps.compile.outcome == 'success' && !cancelled()
