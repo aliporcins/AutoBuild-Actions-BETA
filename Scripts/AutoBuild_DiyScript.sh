@@ -348,19 +348,26 @@ PYEOF
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/crontabs/root" files/etc/crontabs/root
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/uci-defaults/99-set-timezone" files/etc/uci-defaults/99-set-timezone
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/uci-defaults/99-firstboot-init" files/etc/uci-defaults/99-firstboot-init
+	# (2026-11-25 v5) dnsmasq default-upstream fallback: 223.5.5.5 +
+	# 223.6.6.6 as plain-DNS upstreams so foreign domains still resolve
+	# when DoH (or the main router's DNS) is dead -- the 2026-11-25
+	# main-router root cause (apple.com/google.com timeout -> iPhone
+	# captive check fails -> WiFi drops). No per-domain lines touched.
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/uci-defaults/99-dns-fallback" files/etc/uci-defaults/99-dns-fallback
 	# Static wireless (psk2, NO key -- password entered in LuCI after flashing).
 	# (2026-11-21: the disabled-by-default WARP WireGuard interface and the
 	# pbr split-tunnel config + China-list user file were removed with
 	# WireGuard/pbr -- AX6000 is a pure AP now.)
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/config/wireless" files/etc/config/wireless
-	chmod 755 files/root/led-night.sh files/root/led-day.sh files/etc/uci-defaults/99-set-timezone files/etc/uci-defaults/99-firstboot-init
-	for f in root/led-night.sh root/led-day.sh etc/crontabs/root etc/uci-defaults/99-set-timezone etc/uci-defaults/99-firstboot-init etc/config/wireless; do
+	chmod 755 files/root/led-night.sh files/root/led-day.sh files/etc/uci-defaults/99-set-timezone files/etc/uci-defaults/99-firstboot-init files/etc/uci-defaults/99-dns-fallback
+	for f in root/led-night.sh root/led-day.sh etc/crontabs/root etc/uci-defaults/99-set-timezone etc/uci-defaults/99-firstboot-init etc/uci-defaults/99-dns-fallback etc/config/wireless; do
 		[ -f "files/$f" ] || { echo "ERROR: LED/timezone overlay missing from tree files/: $f"; exit 1; }
 	done
 	[ -x files/root/led-night.sh ] || { echo "ERROR: led-night.sh not executable in tree files/"; exit 1; }
 	[ -x files/root/led-day.sh ] || { echo "ERROR: led-day.sh not executable in tree files/"; exit 1; }
 	[ -x files/etc/uci-defaults/99-set-timezone ] || { echo "ERROR: 99-set-timezone not executable in tree files/"; exit 1; }
 	[ -x files/etc/uci-defaults/99-firstboot-init ] || { echo "ERROR: 99-firstboot-init not executable in tree files/"; exit 1; }
+	[ -x files/etc/uci-defaults/99-dns-fallback ] || { echo "ERROR: 99-dns-fallback not executable in tree files/"; exit 1; }
 	[ "$(wc -l < files/root/led-night.sh)" -eq 7 ] || { echo "ERROR: led-night.sh line count changed (expected 7)"; exit 1; }
 	[ "$(wc -l < files/root/led-day.sh)" -eq 2 ] || { echo "ERROR: led-day.sh line count changed (expected 2)"; exit 1; }
 	[ "$(wc -l < files/etc/crontabs/root)" -eq 2 ] || { echo "ERROR: crontab line count changed (expected 2)"; exit 1; }
@@ -376,6 +383,10 @@ PYEOF
 	grep -q "hostname='ax6000'" files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init missing hostname ax6000"; exit 1; }
 	grep -Fq '"$LAN_IP" = "192.168.2.1"' files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init missing factory-state guard (LAN 192.168.2.1)"; exit 1; }
 	grep -q "rm -f /overlay/sysupgrade.tgz" files/etc/uci-defaults/99-firstboot-init || { echo "ERROR: firstboot-init missing sysupgrade.tgz cleanup"; exit 1; }
+	grep -Fq "223.5.5.5" files/etc/uci-defaults/99-dns-fallback || { echo "ERROR: 99-dns-fallback missing 223.5.5.5"; exit 1; }
+	grep -Fq "223.6.6.6" files/etc/uci-defaults/99-dns-fallback || { echo "ERROR: 99-dns-fallback missing 223.6.6.6"; exit 1; }
+	grep -Fq "uci commit dhcp" files/etc/uci-defaults/99-dns-fallback || { echo "ERROR: 99-dns-fallback missing uci commit dhcp"; exit 1; }
+	sh -n files/etc/uci-defaults/99-dns-fallback || { echo "ERROR: 99-dns-fallback fails shell syntax check"; exit 1; }
 	# Static wireless: SSIDs 5G/2.4G/5G, channels 36/1/36, psk2, NO key line.
 	grep -q "option ssid '5G'" files/etc/config/wireless || { echo "ERROR: wireless missing SSID 5G"; exit 1; }
 	grep -q "option ssid '2.4G'" files/etc/config/wireless || { echo "ERROR: wireless missing SSID 2.4G"; exit 1; }
@@ -444,6 +455,17 @@ PYEOF
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/sysupgrade.conf" files/etc/sysupgrade.conf
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/init.d/sysupgrade-cleanup" files/etc/init.d/sysupgrade-cleanup
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/lib/upgrade/keep.d/luci-app-openclash" files/lib/upgrade/keep.d/luci-app-openclash
+	# (2026-11-25 v5) zz-fix-openclash-keepd: the OpenClash package's
+	# first-boot script /etc/uci-defaults/luci-openclash lines 38-40
+	# unconditionally rewrite /lib/upgrade/keep.d/luci-app-openclash
+	# back to the whole-dir default, undoing the slim keep.d above
+	# (v3 live system: backup ballooned to 4.2MB again). This
+	# uci-defaults script sorts after "luci-openclash" ("zz-...") so it
+	# runs after the package overwrite and restores the slim version
+	# from the ROM copy (/rom/lib/upgrade/keep.d/luci-app-openclash).
+	mkdir -p files/etc/uci-defaults
+	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/uci-defaults/zz-fix-openclash-keepd" files/etc/uci-defaults/zz-fix-openclash-keepd
+	chmod 755 files/etc/uci-defaults/zz-fix-openclash-keepd
 	# The rc.d symlink is GENERATED here, not vendored in the repo:
 	# the git-data API push used for this repo cannot carry symlinks,
 	# so there is no Files-ax6000/etc/rc.d/ in git. ln -sf creates
@@ -466,6 +488,10 @@ PYEOF
 	grep -Fq '/etc/openclash/config/*.yaml' files/lib/upgrade/keep.d/luci-app-openclash || { echo "ERROR: openclash keep.d missing config/*.yaml"; exit 1; }
 	grep -Fq '/etc/openclash/custom/' files/lib/upgrade/keep.d/luci-app-openclash || { echo "ERROR: openclash keep.d missing custom/"; exit 1; }
 	grep -Fq '/etc/openclash/overwrite/' files/lib/upgrade/keep.d/luci-app-openclash || { echo "ERROR: openclash keep.d missing overwrite/"; exit 1; }
+	[ -f files/etc/uci-defaults/zz-fix-openclash-keepd ] || { echo "ERROR: zz-fix-openclash-keepd missing from tree files/"; exit 1; }
+	[ -x files/etc/uci-defaults/zz-fix-openclash-keepd ] || { echo "ERROR: zz-fix-openclash-keepd not executable in tree files/"; exit 1; }
+	grep -Fq '/rom/lib/upgrade/keep.d/luci-app-openclash' files/etc/uci-defaults/zz-fix-openclash-keepd || { echo "ERROR: zz-fix-openclash-keepd must restore keep.d from /rom"; exit 1; }
+	sh -n files/etc/uci-defaults/zz-fix-openclash-keepd || { echo "ERROR: zz-fix-openclash-keepd fails shell syntax check"; exit 1; }
 	grep -q "rm -f /overlay/sysupgrade.tgz" files/etc/init.d/sysupgrade-cleanup || { echo "ERROR: sysupgrade-cleanup missing rm /overlay/sysupgrade.tgz"; exit 1; }
 	grep -q "^START=99$" files/etc/init.d/sysupgrade-cleanup || { echo "ERROR: sysupgrade-cleanup missing START=99"; exit 1; }
 	sh -n files/etc/init.d/sysupgrade-cleanup || { echo "ERROR: sysupgrade-cleanup fails shell syntax check"; exit 1; }
@@ -473,19 +499,36 @@ PYEOF
 	fi # end AX6000-only sysupgrade backup+cleanup
 
 	# sing-box-lx (2026-11-22) -- AX6000 (qualcommax) ONLY: bake the
-	# sing-box-lx 1.14.4-lx.35 arm64 binary (Leadaxe/sing-box-lx fork;
+	# sing-box-lx 1.14.4-lx.36 arm64 binary (Leadaxe/sing-box-lx fork;
 	# the "type": "masque" outbound for Cloudflare WARP exists only in
 	# this fork -- the feed sing-box-tiny lacks it, so it was removed
 	# from Configs/xiaomi_ax6000_nss) + the LuCI sing-box UI
 	# (controller/view, AX6000-only variant since 2026-11-25 v2: page
 	# load no longer runs a full sing-box check, warp-masque is optional;
 	# the main router still runs the unpatched UI) + the
-	# subscription auto-refresh cron + a keyless starter config (direct
-	# + urltest skeleton, NO subscriptions, NO keys -- the user adds
-	# those after flashing)
-	# + the geoip/geosite rule sets + the procd init script + UCI
-	# config (enabled=0 by default; the UI's Start button turns it on).
-	# The binary is NOT vendored in the repo (76,597,000 B is too large
+	# subscription auto-refresh cron + a starter config (direct
+	# + urltest skeleton, NO subscriptions -- the user adds
+	# those after flashing) + the geoip/geosite rule sets + the procd
+	# init script + UCI config (enabled=0 by default; the UI's Start
+	# button turns it on).
+	# (2026-11-25 v5) WARP is injected into the starter at build time
+	# from GitHub Actions secrets (AX6000_WARP_PRIVATE_KEY / _IPV4 /
+	# _IPV6): a fresh WARP account registered 2026-11-25 for the AX6000
+	# only (ECDSA key, MASQUE protocol -- the old key leaked with the
+	# public v1 release and is refused by Cloudflare). The repo config
+	# stays keyless (no private_key in git); the injection happens here,
+	# AFTER the keyless checks below, so the repo never holds a key.
+	# The injected warp-masque outbound + a "warp" urltest fallback
+	# group ([warp-masque, direct]) become route.final and the non-CN
+	# rule target: WARP healthy -> traffic via WARP; WARP dead ->
+	# urltest falls back to direct, no whole-network black hole
+	# (2026-11-25 10:54 the dead-WARP + final=warp-masque black hole
+	# dropped the WiFi). The endpoint public_key (pin) is Cloudflare's
+	# server key -- verified 2026-11-25 to match the 162.159.198.2
+	# certificate -- and is NOT a secret; it is hardcoded in the
+	# injection below. If the secrets are absent (e.g. a fork build),
+	# the injection is skipped and the keyless starter ships as-is.
+	# The binary is NOT vendored in the repo (76,742,856 B is too large
 	# for the git-data API push, same as the mihomo core below; it is
 	# fetched here at build time from the pinned sing-box-lx release,
 	# hash-verified twice: the .tar.gz SHA256, then the extracted
@@ -495,13 +538,13 @@ PYEOF
 	# leaked into the starter config.
 	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
 	mkdir -p files/usr/bin files/usr/lib/lua/luci/controller files/usr/lib/lua/luci/view/sing-box files/etc/sing-box files/etc/init.d files/etc/config
-	SINGBOX_URL="https://github.com/Leadaxe/sing-box-lx/releases/download/v1.14.4-lx.35/sing-box-1.14.4-lx.35-linux-arm64.tar.gz"
-	SINGBOX_TGZ_SHA256="f9343bb181f1a66e1678595329bd98a4de2c50a6968d7b7cb04b10031d776c3e"
-	curl -fsSL -o sing-box-1.14.4-lx.35-linux-arm64.tar.gz "$SINGBOX_URL" || { echo "ERROR: sing-box download failed"; exit 1; }
-	echo "$SINGBOX_TGZ_SHA256  sing-box-1.14.4-lx.35-linux-arm64.tar.gz" | sha256sum -c - || { echo "ERROR: sing-box .tar.gz SHA256 mismatch"; exit 1; }
-	tar xzf sing-box-1.14.4-lx.35-linux-arm64.tar.gz sing-box-1.14.4-lx.35-linux-arm64/sing-box || { echo "ERROR: sing-box tar extract failed"; exit 1; }
-	mv sing-box-1.14.4-lx.35-linux-arm64/sing-box files/usr/bin/sing-box || { echo "ERROR: sing-box move to tree files/ failed"; exit 1; }
-	rm -rf sing-box-1.14.4-lx.35-linux-arm64 sing-box-1.14.4-lx.35-linux-arm64.tar.gz
+	SINGBOX_URL="https://github.com/Leadaxe/sing-box-lx/releases/download/v1.14.4-lx.36/sing-box-1.14.4-lx.36-linux-arm64.tar.gz"
+	SINGBOX_TGZ_SHA256="9be8f09c5ce654807bf14d0d2b9589aae0a7e89146242ba8826a0f5276361f7a"
+	curl -fsSL -o sing-box-1.14.4-lx.36-linux-arm64.tar.gz "$SINGBOX_URL" || { echo "ERROR: sing-box download failed"; exit 1; }
+	echo "$SINGBOX_TGZ_SHA256  sing-box-1.14.4-lx.36-linux-arm64.tar.gz" | sha256sum -c - || { echo "ERROR: sing-box .tar.gz SHA256 mismatch"; exit 1; }
+	tar xzf sing-box-1.14.4-lx.36-linux-arm64.tar.gz sing-box-1.14.4-lx.36-linux-arm64/sing-box || { echo "ERROR: sing-box tar extract failed"; exit 1; }
+	mv sing-box-1.14.4-lx.36-linux-arm64/sing-box files/usr/bin/sing-box || { echo "ERROR: sing-box move to tree files/ failed"; exit 1; }
+	rm -rf sing-box-1.14.4-lx.36-linux-arm64 sing-box-1.14.4-lx.36-linux-arm64.tar.gz
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/usr/lib/lua/luci/controller/sing-box.lua" files/usr/lib/lua/luci/controller/sing-box.lua
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/usr/lib/lua/luci/view/sing-box/sing-box.htm" files/usr/lib/lua/luci/view/sing-box/sing-box.htm
 	cp -a "$GITHUB_WORKSPACE/Files-ax6000/etc/sing-box/sub-refresh-cron.lua" files/etc/sing-box/sub-refresh-cron.lua
@@ -517,23 +560,27 @@ PYEOF
 	done
 	[ -x files/usr/bin/sing-box ] || { echo "ERROR: sing-box binary not executable in tree files/"; exit 1; }
 	[ -x files/etc/init.d/sing-box ] || { echo "ERROR: sing-box init not executable in tree files/"; exit 1; }
-	[ "$(stat -c%s files/usr/bin/sing-box)" -eq 76597000 ] || { echo "ERROR: sing-box binary size changed (expected 76597000)"; exit 1; }
-	[ "$(sha256sum files/usr/bin/sing-box | cut -d' ' -f1)" = "1f32fe4525db7b8dad55c9a744167af235e0e527b75221e090cd90d6c6254175" ] || { echo "ERROR: sing-box binary SHA256 mismatch"; exit 1; }
-	[ "$(md5sum files/usr/lib/lua/luci/controller/sing-box.lua | cut -d' ' -f1)" = "849669eaaed2c1a86050b4a1100e8933" ] || { echo "ERROR: sing-box controller MD5 mismatch"; exit 1; }
+	[ "$(stat -c%s files/usr/bin/sing-box)" -eq 76742856 ] || { echo "ERROR: sing-box binary size changed (expected 76742856)"; exit 1; }
+	[ "$(sha256sum files/usr/bin/sing-box | cut -d' ' -f1)" = "29c6f1c83698132d35f779e13e125dce6d9a3947f052b228a3f310ab9db70ded" ] || { echo "ERROR: sing-box binary SHA256 mismatch"; exit 1; }
+	[ "$(md5sum files/usr/lib/lua/luci/controller/sing-box.lua | cut -d' ' -f1)" = "aa3d8e2f1db6ed21f6bff110c26c5d38" ] || { echo "ERROR: sing-box controller MD5 mismatch"; exit 1; }
 	[ "$(md5sum files/usr/lib/lua/luci/view/sing-box/sing-box.htm | cut -d' ' -f1)" = "5dca79dc7372cbb122c439b00b8e8b4c" ] || { echo "ERROR: sing-box view MD5 mismatch"; exit 1; }
 	[ "$(md5sum files/etc/sing-box/sub-refresh-cron.lua | cut -d' ' -f1)" = "3c9be3940f2b15c2cfcdb56e7baf797b" ] || { echo "ERROR: sing-box cron MD5 mismatch"; exit 1; }
 	python3 -c "import json; json.load(open('files/etc/sing-box/config.json'))" || { echo "ERROR: sing-box starter config is not valid JSON"; exit 1; }
-	# Secret policy (2026-11-25 v2): NO credentials of any kind in firmware.
-	# The starter config must not contain private_key / subscription /
-	# vless / uuid / password / token strings at all. The warp-masque
-	# outbound was removed from the starter: the AX6000's own WARP key
-	# leaked with the public 2026-11-24 release (run 45433764272), so no
-	# key is baked in anymore. The live device keeps its own key via
-	# sysupgrade-preserved /etc/sing-box/config.json, never via firmware.
+	# Secret policy (2026-11-25 v2, revised v5): NO credentials in the
+	# REPO. The starter config in git must not contain private_key /
+	# subscription / vless / uuid / password / token strings at all.
+	# The AX6000's own WARP key leaked with the public 2026-11-24
+	# release (run 45433764272), so no key is ever committed to git.
+	# (v5) The key DOES enter the firmware image, but only via GitHub
+	# Actions secrets (AX6000_WARP_PRIVATE_KEY / _IPV4 / _IPV6), injected
+	# by the step below AFTER these keyless checks -- the secret value
+	# never touches the repo source, and the public release still
+	# distributes the image (as every firmware does). This is the
+	# parent-authorized exception for the AX6000's own WARP account.
 	# The controller guards (rebuild_outbounds / ensure_other_backup /
 	# scheme switch) handle a missing warp-masque, so a keyless starter
 	# still refreshes and starts normally after the user adds subscriptions.
-	! grep -qi "subscription\|vless\|uuid\|password\|token\|private_key" files/etc/sing-box/config.json || { echo "ERROR: sing-box starter config contains credentials (must never enter firmware)"; exit 1; }
+	! grep -qi "subscription\|vless\|uuid\|password\|token\|private_key" files/etc/sing-box/config.json || { echo "ERROR: sing-box starter config in git contains credentials (must never enter the repo)"; exit 1; }
 	# Structural check: every referenced outbound must exist (a dangling
 	# reference would make sing-box fail to start on first boot).
 	python3 - <<'PYEOF' || { echo "ERROR: sing-box starter config structure invalid"; exit 1; }
@@ -554,7 +601,82 @@ for o in c['outbounds']:
 assert 'warp-masque' not in tags, 'starter must not contain warp-masque'
 print('starter structure OK: outbounds', sorted(tags))
 PYEOF
-	echo "sing-box overlay check OK: 10 files in tree files/, binary 76597000 B SHA256 verified, UI MD5s verified, starter config valid, no credentials"
+	# WARP injection (2026-11-25 v5): add the warp-masque outbound +
+	# the "warp" urltest fallback group from GitHub Actions secrets.
+	# Runs AFTER the keyless checks above, so the repo config stays
+	# clean. If any secret is unset/empty the injection is skipped
+	# (keyless starter ships as-is). The endpoint public_key below is
+	# Cloudflare's server pin (verified 2026-11-25 to match the
+	# 162.159.198.2 certificate) -- a public value, not a secret.
+	# Fallback design: urltest group "warp" = [warp-masque, direct],
+	# probed every 3m via http://cp.cloudflare.com/generate_204.
+	# route.final and the non-CN rule both point at "warp": WARP
+	# healthy -> traffic via WARP; WARP dead -> urltest probe fails
+	# and the group falls back to direct, so the TUN never black-holes
+	# the whole network (2026-11-25 10:54 WiFi outage). Never prints
+	# the secret values (GitHub also masks registered secrets in logs).
+	if [ -n "$AX6000_WARP_PRIVATE_KEY" ] && [ -n "$AX6000_WARP_IPV4" ] && [ -n "$AX6000_WARP_IPV6" ]; then
+	python3 - <<'PYEOF' || { echo "ERROR: WARP injection into sing-box config failed"; exit 1; }
+import base64, json, os
+p = 'files/etc/sing-box/config.json'
+c = json.load(open(p))
+priv = os.environ['AX6000_WARP_PRIVATE_KEY'].strip()
+ipv4 = os.environ['AX6000_WARP_IPV4'].strip()
+ipv6 = os.environ['AX6000_WARP_IPV6'].strip()
+# The private_key must be a base64 DER EC private key (x509.ParseECPrivateKey).
+der = base64.b64decode(priv)
+assert der[:3] == b'\x30\x77\x02' and len(der) == 121, 'WARP private_key is not a P-256 EC DER key'
+assert ipv4.endswith('/32') and ipv6.endswith('/128'), 'WARP tunnel addresses need /32 and /128'
+warp = {
+    'ipv6': ipv6, 'mtu': 1280, 'server_port': 443, 'ip': ipv4,
+    'profile': 'cloudflare', 'private_key': priv, 'server': '162.159.198.2',
+    'type': 'masque',
+    'public_key': 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEIaU7MToJm9NKp8YfGxR6r+/h4mcG7SxI8tsW8OR1A5tv/zCzVbCRRh2t87/kxnP6lAy0lkr7qYwu+ox+k3dr6w==',
+    'vhttp': 'auto', 'tag': 'warp-masque',
+}
+warpgroup = {
+    'type': 'urltest', 'tag': 'warp',
+    'outbounds': ['warp-masque', 'direct'],
+    'url': 'http://cp.cloudflare.com/generate_204',
+    'interval': '3m', 'tolerance': 50,
+}
+c['outbounds'].append(warp)
+c['outbounds'].append(warpgroup)
+c['route']['final'] = 'warp'
+n = 0
+for r in c['route']['rules']:
+    if r.get('rule_set') == 'geosite-geolocation-!cn':
+        r['outbound'] = 'warp'
+        n += 1
+assert n == 1, 'expected exactly one geosite-geolocation-!cn rule, found %d' % n
+tags = {o['tag'] for o in c['outbounds']}
+assert c['route']['final'] in tags, 'final outbound missing after injection'
+for r in c['route']['rules']:
+    if 'outbound' in r:
+        assert r['outbound'] in tags, 'rule outbound %s missing after injection' % r['outbound']
+for o in c['outbounds']:
+    if o['type'] == 'urltest':
+        assert o.get('outbounds'), 'urltest %s has no members' % o['tag']
+        for mm in o['outbounds']:
+            assert mm in tags, 'urltest member %s missing' % mm
+# (v5, item 6) no DNS server may carry a detour: a detour to an empty
+# direct outbound is FATAL at runtime ("detour to an empty direct
+# outbound makes no sense", 2026-11-25 live crash loop). The "remote"
+# DoH server must run without a detour (default route = direct).
+for s in c.get('dns', {}).get('servers', []):
+    assert 'detour' not in s, 'dns server %s still has a detour' % s.get('tag')
+assert 'warp-masque' in tags and 'warp' in tags, 'WARP outbounds missing after injection'
+json.dump(c, open(p, 'w'), indent=2)
+print('WARP injected: outbounds', sorted(tags), '| final =', c['route']['final'])
+PYEOF
+	# Re-validate the injected config parses as JSON (structure was
+	# asserted inside the injection step above).
+	python3 -c "import json; json.load(open('files/etc/sing-box/config.json'))" || { echo "ERROR: injected sing-box config is not valid JSON"; exit 1; }
+	echo "WARP injected into sing-box starter: warp-masque + warp fallback group, final=warp"
+	else
+	echo "WARP secrets absent: shipping keyless sing-box starter (no warp-masque, final=direct)"
+	fi
+	echo "sing-box overlay check OK: 10 files in tree files/, binary 76742856 B SHA256 verified, UI MD5s verified, starter config valid, repo config keyless"
 	fi # end AX6000-only sing-box overlay
 
 	# OpenClash Meta core (2026-11-19, user decision) -- AX6000

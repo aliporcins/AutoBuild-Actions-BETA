@@ -1,0 +1,23 @@
+#!/bin/sh
+# zz-fix-openclash-keepd -- re-apply the slim openclash keep.d after the
+# package's first-boot script overwrites it.
+#
+# Background (2026-11-25 v3): the image bakes a slim
+# /lib/upgrade/keep.d/luci-app-openclash (small files only -- the 57MB
+# clash_meta binary + 10MB GeoSite.dat must NOT be in the sysupgrade
+# backup, or the save stage hangs on 22MB free RAM and the flash dies).
+# But the luci-app-openclash package's own first-boot script
+# /etc/uci-defaults/luci-openclash lines 38-40 unconditionally rewrite
+# that keep.d back to the package default (whole /etc/openclash/ dir),
+# so the slim version is lost on first boot and the next sysupgrade
+# backup balloons to ~4.2MB again (v3 live system, verified 2026-11-25).
+#
+# uci-defaults scripts run in alphabetical order; "zz-..." sorts after
+# "luci-openclash", so this runs after the package's overwrite and
+# restores the slim version from the ROM (/rom is the pristine squashfs
+# copy baked into the image). If the ROM copy is missing (older image),
+# do nothing -- the package default stays, no harm.
+if [ -f /rom/lib/upgrade/keep.d/luci-app-openclash ]; then
+	cp -f /rom/lib/upgrade/keep.d/luci-app-openclash /lib/upgrade/keep.d/luci-app-openclash
+fi
+exit 0

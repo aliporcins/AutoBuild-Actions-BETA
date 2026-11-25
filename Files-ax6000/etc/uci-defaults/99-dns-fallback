@@ -1,0 +1,26 @@
+#!/bin/sh
+# 99-dns-fallback -- dnsmasq default-upstream fallback (2026-11-25 v5).
+#
+# Background: the main router's dnsmasq default upstream was DoH only
+# (127.0.0.1#5053 Cloudflare, #5054 Google). When 1.1.1.1 dropped 100%
+# of packets and Google DoH also failed, foreign domains (apple.com,
+# google.com) timed out; the iPhone judges the network by
+# captive.apple.com, fails the check and drops WiFi repeatedly. The
+# main router was fixed live 2026-11-25 11:30 by adding 223.5.5.5 and
+# 223.6.6.6 as default upstreams (apple.com / google.com resolve,
+# captive returns 200). The AX6000 runs the same dnsmasq, so the same
+# fallback is baked in here: dnsmasq keeps those two plain-DNS
+# upstreams alongside whatever resolv.conf.auto provides, so foreign
+# domains still resolve when DoH (or the main router's DNS) is dead.
+#
+# Only the DEFAULT upstream is touched. No per-domain server lines
+# are added, changed or removed here (the 325 China-domain lines live
+# on the main router, not on the AX6000; nothing domain-specific is
+# touched). Idempotent: skips a server already listed.
+for srv in 223.5.5.5 223.6.6.6; do
+	if ! uci get dhcp.@dnsmasq[0].server 2>/dev/null | grep -qx "$srv"; then
+		uci add_list dhcp.@dnsmasq[0].server="$srv"
+	fi
+done
+uci commit dhcp
+exit 0

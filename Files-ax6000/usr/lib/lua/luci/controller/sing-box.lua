@@ -126,19 +126,28 @@ local function scheme_names()
 	return a, b
 end
 
--- 确保 other 组含 warp-masque（方案 B 的兜底）；缺失时补上，返回是否改动
--- 无 warp-masque 出口时不补（starter 配置不含密钥；缺了它往组里加只会
--- 造出引用不存在出口的非法配置，校验必失败）
+-- 确保 other 组含 warp-masque（方案 B 的兜底）与 direct（最终兜底）；
+-- 缺失时补上，返回是否改动。无 warp-masque 出口时不补它（starter
+-- 配置不含密钥；缺了它往组里加只会造出引用不存在出口的非法配置，
+-- 校验必失败）。direct 始终存在，始终补（v5：节点与 WARP 全死时
+-- other 组也要能走直连，不黑洞）。
 local function ensure_other_backup(cfg)
-	if not has_outbound(cfg, "warp-masque") then return false end
 	local changed = false
+	local has_warp = has_outbound(cfg, "warp-masque")
 	for _, ob in ipairs(cfg.outbounds or {}) do
 		if ob.tag == "other" and ob.type == "urltest" then
-			local has = false
-			for _, m in ipairs(ob.outbounds or {}) do if m == "warp-masque" then has = true end end
-			if not has then
-				ob.outbounds = ob.outbounds or {}
+			ob.outbounds = ob.outbounds or {}
+			local has_w, has_d = false, false
+			for _, m in ipairs(ob.outbounds) do
+				if m == "warp-masque" then has_w = true end
+				if m == "direct" then has_d = true end
+			end
+			if has_warp and not has_w then
 				table.insert(ob.outbounds, "warp-masque")
+				changed = true
+			end
+			if not has_d then
+				table.insert(ob.outbounds, "direct")
 				changed = true
 			end
 		end
@@ -613,6 +622,12 @@ local function rebuild_outbounds(all_nodes)
 			local members = {}
 			for _, t in ipairs(groups[g]) do members[#members + 1] = t end
 			if (g == "us" or g == "other") and has_warp then members[#members + 1] = "warp-masque" end
+			-- (v5) ultimate fallback: direct. Subscription nodes AND
+			-- warp-masque both dead -> urltest falls back to direct so
+			-- traffic still flows instead of black-holing (2026-11-25:
+			-- nodes dead + WARP dead -> "other" gave 000 on
+			-- Google/YouTube). "direct" always exists as an outbound.
+			if g == "us" or g == "other" then members[#members + 1] = "direct" end
 			new_out[#new_out + 1] = {
 				type = "urltest", tag = g,
 				outbounds = members,

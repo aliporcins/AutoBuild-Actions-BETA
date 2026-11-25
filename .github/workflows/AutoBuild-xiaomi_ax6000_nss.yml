@@ -273,6 +273,13 @@ jobs:
         echo "Verified: MAGIC_SYSRQ_SERIAL and DEVMEM are off in the NSS tree"
 
     - name: Run Diy Scripts
+      env:
+        # v5 (2026-11-25): the AX6000's own WARP account (ECDSA, MASQUE).
+        # Injected by AutoBuild_DiyScript.sh into the sing-box starter
+        # AFTER the keyless repo checks. Never committed to git.
+        AX6000_WARP_PRIVATE_KEY: ${{ secrets.AX6000_WARP_PRIVATE_KEY }}
+        AX6000_WARP_IPV4: ${{ secrets.AX6000_WARP_IPV4 }}
+        AX6000_WARP_IPV6: ${{ secrets.AX6000_WARP_IPV6 }}
       run: |
         chmod +x Scripts/AutoBuild_*.sh
         cd openwrt
