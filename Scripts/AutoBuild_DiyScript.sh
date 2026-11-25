@@ -564,7 +564,7 @@ PYEOF
 	# (pinned release, hash-verified) into the tree files/ overlay
 	# at the path OpenClash expects (/etc/openclash/core/clash_meta,
 	# per luci-app-openclash openclash_core.sh: meta_core_path).
-	# Source: MetaCubeX/mihomo Prerelease-Alpha c7af25c linux-arm64.
+	# Source: MetaCubeX/mihomo Prerelease-Alpha dd74780 linux-arm64.
 	# (Updated 2026-11-24 from alpha-100ff73: the rolling Prerelease-Alpha
 	# release pruned the 100ff73 asset on 2026-11-24, so the old pin 404s;
 	# c7af25c is the current alpha, verified locally before pinning:
@@ -572,6 +572,10 @@ PYEOF
 	# 5e7875e1.... No stable release is newer than alpha-100ff73
 	# (v1.19.34 is 2026-11-11, older than the Nov 20 alpha build), so
 	# the alpha channel is kept; this pin is NOT chased daily.)
+	# (Updated 2026-11-25 from alpha-c7af25c: same pruning, c7af25c 404s
+	# on 2026-11-25; dd74780 is the current alpha, verified locally:
+	# .gz 20,698,749 B SHA256 998030ac..., binary 57,409,662 B SHA256
+	# ba6bbd15....)
 	# The binary is
 	# NOT vendored in the repo (57M is too large for the git-data API
 	# push; it is fetched here like the other externals). Fail fast
@@ -587,17 +591,17 @@ PYEOF
 	# first run (as the current production firmware does).
 	if grep -q "^CONFIG_TARGET_qualcommax=y" .config 2>/dev/null; then
 	mkdir -p files/etc/openclash/core
-	MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/Prerelease-Alpha/mihomo-linux-arm64-alpha-c7af25c.gz"
-	MIHOMO_GZ_SHA256="ed32ca6d4afa9b731265d524cee01e48a64076d2da8fcaf2d03c4d87d70ec0a6"
-	curl -fsSL -o mihomo-linux-arm64-alpha-c7af25c.gz "$MIHOMO_URL" || { echo "ERROR: mihomo download failed"; exit 1; }
-	echo "$MIHOMO_GZ_SHA256  mihomo-linux-arm64-alpha-c7af25c.gz" | sha256sum -c - || { echo "ERROR: mihomo .gz SHA256 mismatch"; exit 1; }
-	gzip -dc mihomo-linux-arm64-alpha-c7af25c.gz > files/etc/openclash/core/clash_meta || { echo "ERROR: mihomo gunzip failed"; exit 1; }
+	MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/Prerelease-Alpha/mihomo-linux-arm64-alpha-dd74780.gz"
+	MIHOMO_GZ_SHA256="998030ac8d724b5144877f4c774abdefb0ce8eca46b3ea4c8ef24390a5ea4085"
+	curl -fsSL -o mihomo-linux-arm64-alpha-dd74780.gz "$MIHOMO_URL" || { echo "ERROR: mihomo download failed"; exit 1; }
+	echo "$MIHOMO_GZ_SHA256  mihomo-linux-arm64-alpha-dd74780.gz" | sha256sum -c - || { echo "ERROR: mihomo .gz SHA256 mismatch"; exit 1; }
+	gzip -dc mihomo-linux-arm64-alpha-dd74780.gz > files/etc/openclash/core/clash_meta || { echo "ERROR: mihomo gunzip failed"; exit 1; }
 	chmod 755 files/etc/openclash/core/clash_meta
-	rm -f mihomo-linux-arm64-alpha-c7af25c.gz
+	rm -f mihomo-linux-arm64-alpha-dd74780.gz
 	[ -f files/etc/openclash/core/clash_meta ] || { echo "ERROR: clash_meta missing from tree files/"; exit 1; }
 	[ -x files/etc/openclash/core/clash_meta ] || { echo "ERROR: clash_meta not executable in tree files/"; exit 1; }
 	[ "$(wc -c < files/etc/openclash/core/clash_meta)" -eq 57409662 ] || { echo "ERROR: clash_meta size changed (expected 57409662)"; exit 1; }
-	echo "5e7875e13e34c5d6059588e1ab06522da933beb8c2afdbc24c26bf8f09a1a1b3  files/etc/openclash/core/clash_meta" | sha256sum -c - || { echo "ERROR: clash_meta SHA256 mismatch"; exit 1; }
+	echo "ba6bbd15d98ddbf4965dc0487c1dedc7daa0b5417a7c220217373f47fd4db827  files/etc/openclash/core/clash_meta" | sha256sum -c - || { echo "ERROR: clash_meta SHA256 mismatch"; exit 1; }
 	file files/etc/openclash/core/clash_meta | grep -q "ARM aarch64" || { echo "ERROR: clash_meta is not ARM aarch64 ELF"; exit 1; }
 	file files/etc/openclash/core/clash_meta | grep -q "ELF 64-bit" || { echo "ERROR: clash_meta is not 64-bit ELF"; exit 1; }
 	echo "Meta core check OK: clash_meta 57409662 B, aarch64 ELF, SHA256 verified"
