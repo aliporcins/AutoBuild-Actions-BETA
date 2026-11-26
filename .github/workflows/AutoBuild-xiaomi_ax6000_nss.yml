@@ -470,6 +470,7 @@ jobs:
         
     - name: Refresh API (1/2)
       if: env.UPLOAD_RELEASES == 'true' && steps.compile.outcome == 'success' && !cancelled()
+      continue-on-error: true
       run: |
         # v3 fix 2026-11-25: unauthenticated api.github.com calls are limited to 60/h per
         # runner IP; run 45519214973 failed here with "403 rate limit exceeded" after a
@@ -479,6 +480,7 @@ jobs:
         
     - name: Refresh API (2/2)
       if: env.UPLOAD_RELEASES == 'true' && steps.compile.outcome == 'success' && !cancelled()
+      continue-on-error: true
       uses: svenstaro/upload-release-action@v2
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
